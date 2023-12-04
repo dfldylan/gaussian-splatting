@@ -208,7 +208,7 @@ python metrics.py -m <path to trained model> # Compute error metrics on renderin
 
 If you want to evaluate our [pre-trained models](https://repo-sam.inria.fr/fungraph/3d-gaussian-splatting/datasets/pretrained/models.zip), you will have to download the corresponding source data sets and indicate their location to ```render.py``` with an additional ```--source_path/-s``` flag. Note: The pre-trained models were created with the release codebase. This code base has been cleaned up and includes bugfixes, hence the metrics you get from evaluating them will differ from those in the paper.
 ```shell
-python render.py -m <path to pre-trained model> -s <path to COLMAP dataset>
+python render.py -m <path to pre-trained model> -s <path to COLMAP dataset> --data_device cuda
 python metrics.py -m <path to pre-trained model>
 ```
 
