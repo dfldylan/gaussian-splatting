@@ -35,6 +35,8 @@ class CameraInfo(NamedTuple):
     image_name: str
     width: int
     height: int
+    time: float
+
 
 
 class SceneInfo(NamedTuple):
@@ -195,6 +197,7 @@ def readCamerasFromTransforms(path, transformsfile, white_background, extension=
         frames = contents["frames"]
         for idx, frame in enumerate(frames):
             cam_name = os.path.join(path, frame["file_path"] + extension)
+            time = frame["time"]
 
             # NeRF 'transform_matrix' is a camera-to-world transform
             c2w = np.array(frame["transform_matrix"])
@@ -222,9 +225,8 @@ def readCamerasFromTransforms(path, transformsfile, white_background, extension=
             FovY = fovy
             FovX = fovx
 
-            cam_infos.append(CameraInfo(uid=idx, R=R, T=T, FovY=FovY, FovX=FovX, image=image,
-                                        image_path=image_path, image_name=image_name, width=image.size[0],
-                                        height=image.size[1]))
+            cam_infos.append(CameraInfo(uid=idx, R=R, T=T, FovY=FovY, FovX=FovX, image=image, image_path=image_path,
+                                        image_name=image_name, width=image.size[0], height=image.size[1], time=time))
 
     return cam_infos
 
@@ -248,9 +250,9 @@ def readNerfSyntheticInfo(path, white_background, eval, extension=".png"):
         print(f"Generating random point cloud ({num_pts})...")
 
         # We create random points inside the bounds of the synthetic Blender scenes
-        xyz = np.random.random((num_pts, 3)) * 2.6 - 1.3
+        xyz = np.random.random((num_pts, 3)) * 2.6 - 1.3  # [-1.3, 1.3) for each axis
         shs = np.random.random((num_pts, 3)) / 255.0
-        pcd = BasicPointCloud(points=xyz, colors=SH2RGB(shs), normals=np.zeros((num_pts, 3)))
+        # pcd = BasicPointCloud(points=xyz, colors=SH2RGB(shs), normals=np.zeros((num_pts, 3)))
 
         storePly(ply_path, xyz, SH2RGB(shs) * 255)
     try:
