@@ -8,13 +8,13 @@
 #
 # For inquiries contact  george.drettakis@inria.fr
 #
-
+import copy
 import os
 import sys
 from PIL import Image
-from typing import NamedTuple, List
+from typing import NamedTuple, List, Dict
 from scene.colmap_loader import read_extrinsics_text, read_intrinsics_text, qvec2rotmat, \
-    read_extrinsics_binary, read_intrinsics_binary, read_points3D_binary, read_points3D_text
+    read_extrinsics_binary, read_intrinsics_binary, read_points3D_binary, read_points3D_text, TimedImage
 from utils.graphics_utils import getWorld2View2, focal2fov, fov2focal
 import numpy as np
 import json
@@ -22,12 +22,7 @@ from pathlib import Path
 from plyfile import PlyData, PlyElement
 from utils.sh_utils import SH2RGB
 from scene.gaussian_model import BasicPointCloud
-
-
-class TimeSeriesInfo(NamedTuple):
-    start_time: float
-    time_step: float
-    num_frames: int
+from utils.time_utils import TimeSeriesInfo
 
 
 class CameraInfo(NamedTuple):
@@ -105,42 +100,61 @@ def getNerfppNorm(cam_info):
     return {"translate": translate, "radius": radius}
 
 
-def readColmapCameras(cam_extrinsics, cam_intrinsics, images_folder):
+from multiprocessing import Pool
+from itertools import repeat
+
+
+def _process_colmap_camera(key, cam_extrinsics, cam_intrinsics, images_folder, time_step):
+    sys.stdout.write('\r')
+    # the exact output you're looking for:
+    sys.stdout.write("Reading camera {}/{}".format(key + 1, len(cam_extrinsics)))
+    sys.stdout.flush()
+
+    extr = cam_extrinsics[key]
+    intr = cam_intrinsics[extr.camera_id]
+    height = intr.height
+    width = intr.width
+
+    uid = intr.id
+    R = np.transpose(qvec2rotmat(extr.qvec))
+    T = np.array(extr.tvec)
+
+    if intr.model == "SIMPLE_PINHOLE":
+        focal_length_x = intr.params[0]
+        FovY = focal2fov(focal_length_x, height)
+        FovX = focal2fov(focal_length_x, width)
+    elif intr.model == "PINHOLE":
+        focal_length_x = intr.params[0]
+        focal_length_y = intr.params[1]
+        FovY = focal2fov(focal_length_y, height)
+        FovX = focal2fov(focal_length_x, width)
+    else:
+        assert False, "Colmap camera model not handled: only undistorted datasets (PINHOLE or SIMPLE_PINHOLE cameras) supported!"
+
+    image_path = os.path.join(images_folder, extr.name)
+    image_name = os.path.basename(image_path).split(".")[0]
+
+    if time_step:
+        cam_info = CameraInfo(uid=uid, R=R, T=T, FovY=FovY, FovX=FovX, image=None,
+                              image_path=image_path, image_name=image_name, width=width, height=height,
+                              time=time_step * extr.frame_id)
+    else:
+        cam_info = CameraInfo(uid=uid, R=R, T=T, FovY=FovY, FovX=FovX, image=None,
+                              image_path=image_path, image_name=image_name, width=width, height=height, time=0)
+    return cam_info
+
+
+def readColmapCameras(cam_extrinsics, cam_intrinsics, images_folder, time_step=None):
     cam_infos = []
-    for idx, key in enumerate(cam_extrinsics):
-        sys.stdout.write('\r')
-        # the exact output you're looking for:
-        sys.stdout.write("Reading camera {}/{}".format(idx + 1, len(cam_extrinsics)))
-        sys.stdout.flush()
 
-        extr = cam_extrinsics[key]
-        intr = cam_intrinsics[extr.camera_id]
-        height = intr.height
-        width = intr.width
+    # 创建进程池
+    with Pool() as pool:
+        # 使用pool.starmap并行处理
+        results = pool.starmap(_process_colmap_camera,
+                               zip(cam_extrinsics.keys(), repeat(cam_extrinsics), repeat(cam_intrinsics),
+                                   repeat(images_folder), repeat(time_step)))
+        cam_infos.extend(results)
 
-        uid = intr.id
-        R = np.transpose(qvec2rotmat(extr.qvec))
-        T = np.array(extr.tvec)
-
-        if intr.model == "SIMPLE_PINHOLE":
-            focal_length_x = intr.params[0]
-            FovY = focal2fov(focal_length_x, height)
-            FovX = focal2fov(focal_length_x, width)
-        elif intr.model == "PINHOLE":
-            focal_length_x = intr.params[0]
-            focal_length_y = intr.params[1]
-            FovY = focal2fov(focal_length_y, height)
-            FovX = focal2fov(focal_length_x, width)
-        else:
-            assert False, "Colmap camera model not handled: only undistorted datasets (PINHOLE or SIMPLE_PINHOLE cameras) supported!"
-
-        image_path = os.path.join(images_folder, os.path.basename(extr.name))
-        image_name = os.path.basename(image_path).split(".")[0]
-        image = Image.open(image_path)
-
-        cam_info = CameraInfo(uid=uid, R=R, T=T, FovY=FovY, FovX=FovX, image=image,
-                              image_path=image_path, image_name=image_name, width=width, height=height)
-        cam_infos.append(cam_info)
     sys.stdout.write('\n')
     return cam_infos
 
@@ -170,6 +184,94 @@ def storePly(path, xyz, rgb):
     vertex_element = PlyElement.describe(elements, 'vertex')
     ply_data = PlyData([vertex_element])
     ply_data.write(path)
+
+
+def _listFixedColmapSubFolder(path):
+    # 列出路径下的所有文件和文件夹
+    all_items = os.listdir(path)
+
+    # 筛选出是文件夹且名称为纯数字的项目
+    numeric_dirs = []
+    for item in all_items:
+        if os.path.isdir(os.path.join(path, item)):
+            try:
+                # 尝试将名称转换为整数
+                int(item)
+                numeric_dirs.append(item)
+            except ValueError:
+                # 如果转换失败，忽略此项
+                continue
+
+    # 将文件夹名称转换为整数并排序
+    numeric_dirs.sort(key=int)
+
+    return numeric_dirs
+
+
+def readFixedColmapInfo(path, eval, llffhold=8, time_step=1 / 30, timestep_x=1):
+    cameras_views_file = os.path.join(path, "views.txt")
+    cameras_images_file = os.path.join(path, "images.txt")
+    cameras_cameras_file = os.path.join(path, "cameras.txt")
+    cam_views = read_extrinsics_text(cameras_views_file)
+    cam_images = read_extrinsics_text(cameras_images_file)
+    cam_cameras = read_intrinsics_text(cameras_cameras_file)
+
+    numeric_directories = _listFixedColmapSubFolder(path)
+
+    # build object dict Image
+    images = {}
+    image_id = 0
+    for folder in numeric_directories:
+        if int(folder) == 0:
+            for idx, key in enumerate(cam_images):
+                image_raw = cam_images[key]
+                images[image_id] = TimedImage(id=image_id, qvec=image_raw.qvec, tvec=image_raw.tvec,
+                                              camera_id=image_raw.camera_id, name=os.path.join(folder, image_raw.name),
+                                              xys=image_raw.xys, point3D_ids=image_raw.point3D_ids, frame_id=0)
+                image_id += 1
+        else:
+            image_raw = cam_views[int(folder)]
+            for item in os.listdir(os.path.join(path, folder)):
+                if os.path.splitext(item)[1][1:] != 'png':
+                    continue
+                images[image_id] = TimedImage(id=image_id, qvec=image_raw.qvec, tvec=image_raw.tvec,
+                                              camera_id=image_raw.camera_id, name=os.path.join(folder, item),
+                                              xys=image_raw.xys, point3D_ids=image_raw.point3D_ids,
+                                              frame_id=int(os.path.splitext(item)[0]))
+                image_id += 1
+
+    cam_extrinsics = images
+    cam_infos = readColmapCameras(cam_extrinsics=cam_extrinsics, cam_intrinsics=cam_cameras,
+                                  images_folder=path, time_step=time_step)
+
+    if eval:
+        train_cam_infos = [c for idx, c in enumerate(cam_infos) if idx % llffhold != 0]
+        test_cam_infos = [c for idx, c in enumerate(cam_infos) if idx % llffhold == 0]
+    else:
+        train_cam_infos = cam_infos
+        test_cam_infos = []
+
+    nerf_normalization = getNerfppNorm(train_cam_infos)
+    ply_path = os.path.join(path, "points3D.ply")
+    txt_path = os.path.join(path, "points3D.txt")
+    if not os.path.exists(ply_path):
+        xyz, rgb, _ = read_points3D_text(txt_path)
+        storePly(ply_path, xyz, rgb)
+    try:
+        pcd = fetchPly(ply_path)
+    except:
+        pcd = None
+    time_info: TimeSeriesInfo = handle_time(cam_infos)
+    if timestep_x != 1:
+        time_info = TimeSeriesInfo(time_info.start_time, time_info.time_step * timestep_x,
+                                   time_info.num_frames // timestep_x)
+    scene_info = SceneInfo(point_cloud=pcd,
+                           train_cameras=train_cam_infos,
+                           test_cameras=test_cam_infos,
+                           nerf_normalization=nerf_normalization,
+                           ply_path=ply_path,
+                           time_info=time_info)
+    return scene_info
 
 
 def readColmapSceneInfo(path, images, eval, llffhold=8):
@@ -321,9 +423,9 @@ def readNeurofluidInfo(path, white_background, eval, extension=".png", timestep_
             readCamerasFromTransforms(sub_path, "transforms_test.json", white_background, extension))
 
     time_info: TimeSeriesInfo = handle_time(train_cam_infos + test_cam_infos)
-    if timestep_x != 1:
+    if abs(timestep_x - 1) > 1e-5:
         time_info = TimeSeriesInfo(time_info.start_time, time_info.time_step * timestep_x,
-                                   time_info.num_frames // timestep_x)
+                                   int((time_info.num_frames - 1) / timestep_x) + 1)
 
     if not eval:
         train_cam_infos.extend(test_cam_infos)
@@ -333,16 +435,7 @@ def readNeurofluidInfo(path, white_background, eval, extension=".png", timestep_
 
     ply_path = os.path.join(path, "points3d.ply")
     if not os.path.exists(ply_path):
-        # Since this data set has no colmap data, we start with random points
-        num_pts = 100_000
-        print(f"Generating random point cloud ({num_pts})...")
-
-        # We create random points inside the bounds of the synthetic Blender scenes
-        xyz = np.random.random((num_pts, 3)) * 2.6 - 1.3  # [-1.3, 1.3) for each axis
-        shs = np.random.random((num_pts, 3)) / 255.0
-        # pcd = BasicPointCloud(points=xyz, colors=SH2RGB(shs), normals=np.zeros((num_pts, 3)))
-
-        storePly(ply_path, xyz, SH2RGB(shs) * 255)
+        gen_random_points(ply_path)
     try:
         pcd = fetchPly(ply_path)
     except:
@@ -358,8 +451,21 @@ def readNeurofluidInfo(path, white_background, eval, extension=".png", timestep_
     return scene_info
 
 
+def gen_random_points(ply_path, num_pts=100_000):
+    # Since this data set has no colmap data, we start with random points
+    print(f"Generating random point cloud ({num_pts})...")
+
+    # We create random points inside the bounds of the synthetic Blender scenes
+    xyz = np.random.random((num_pts, 3)) * 2.6 - 1.3  # [-1.3, 1.3) for each axis
+    shs = np.random.random((num_pts, 3)) / 255.0
+    # pcd = BasicPointCloud(points=xyz, colors=SH2RGB(shs), normals=np.zeros((num_pts, 3)))
+
+    storePly(ply_path, xyz, SH2RGB(shs) * 255)
+
+
 sceneLoadTypeCallbacks = {
     "Colmap": readColmapSceneInfo,
     "Blender": readNerfSyntheticInfo,
-    "Neurofluid": readNeurofluidInfo
+    "Neurofluid": readNeurofluidInfo,
+    "FixedColmap": readFixedColmapInfo
 }
