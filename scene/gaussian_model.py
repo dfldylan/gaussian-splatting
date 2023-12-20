@@ -22,8 +22,7 @@ from utils.graphics_utils import BasicPointCloud
 from utils.general_utils import strip_symmetric, build_scaling_rotation
 
 
-class GaussianModel:
-
+class GaussianFrame:
     def setup_functions(self):
         def build_covariance_from_scaling_rotation(scaling, scaling_modifier, rotation):
             L = build_scaling_rotation(scaling_modifier * scaling, rotation)
@@ -36,29 +35,112 @@ class GaussianModel:
 
         self.covariance_activation = build_covariance_from_scaling_rotation
 
+        self.cfd_activation = torch.sigmoid
+
         self.opacity_activation = torch.sigmoid
         self.inverse_opacity_activation = inverse_sigmoid
 
         self.rotation_activation = torch.nn.functional.normalize
 
+    def __init__(self, active_sh_degree, max_sh_degree, _xyz, _vel, _features_dc, _features_rest, _scaling, _rotation,
+                 _opacity, _cfd):
+        self._xyz = _xyz
+        self._vel = _vel
+        self._features_dc = _features_dc
+        self._features_rest = _features_rest
+        self._scaling = _scaling
+        self._rotation = _rotation
+        self._opacity = _opacity
+        self._cfd = _cfd
+
+        self.active_sh_degree = active_sh_degree
+        self.max_sh_degree = max_sh_degree
+
+        self.setup_functions()
+
+    @property
+    def get_xyz(self):
+        return self._xyz
+
+    @property
+    def get_vel(self):
+        return self._vel
+
+    @property
+    def get_cfd(self):
+        return self.cfd_activation(self._cfd)
+
+    @property
+    def get_opacity(self):
+        return self.opacity_activation(self._opacity)
+
+    def get_covariance(self, scaling_modifier=1):
+        return self.covariance_activation(self.get_scaling, scaling_modifier, self._rotation)
+
+    @property
+    def get_scaling(self):
+        return self.scaling_activation(self._scaling)
+
+    @property
+    def get_rotation(self):
+        return self.rotation_activation(self._rotation)
+
+    @property
+    def get_features(self):
+        features_dc = self._features_dc
+        features_rest = self._features_rest
+        return torch.cat((features_dc, features_rest), dim=1)
+
+    def construct_list_of_attributes(self):
+        l = ['x', 'y', 'z', 'nx', 'ny', 'nz', 'vx', 'vy', 'vz']
+        # All channels except the 3 DC
+        for i in range(self._features_dc.shape[1] * self._features_dc.shape[2]):
+            l.append('f_dc_{}'.format(i))
+        for i in range(self._features_rest.shape[1] * self._features_rest.shape[2]):
+            l.append('f_rest_{}'.format(i))
+        l.append('opacity')
+        l.append('cfd')
+        for i in range(self._scaling.shape[1]):
+            l.append('scale_{}'.format(i))
+        for i in range(self._rotation.shape[1]):
+            l.append('rot_{}'.format(i))
+        return l
+
+    def save_ply(self, path):
+        mkdir_p(os.path.dirname(path))
+
+        xyz = self._xyz.detach().cpu().numpy()
+        vel = self._vel.detach().cpu().numpy()
+        normals = np.zeros_like(xyz)
+        f_dc = self._features_dc.detach().transpose(1, 2).flatten(start_dim=1).contiguous().cpu().numpy()
+        f_rest = self._features_rest.detach().transpose(1, 2).flatten(start_dim=1).contiguous().cpu().numpy()
+        opacities = self._opacity.detach().cpu().numpy()
+        cfd = self._cfd.detach().cpu().numpy()
+        scale = self._scaling.detach().cpu().numpy()
+        rotation = self._rotation.detach().cpu().numpy()
+
+        dtype_full = [(attribute, 'f4') for attribute in self.construct_list_of_attributes()]
+
+        elements = np.empty(xyz.shape[0], dtype=dtype_full)
+        attributes = np.concatenate((xyz, normals, vel, f_dc, f_rest, opacities, cfd, scale, rotation), axis=1)
+        elements[:] = list(map(tuple, attributes))
+        el = PlyElement.describe(elements, 'vertex')
+        PlyData([el]).write(path)
+
+
+class GaussianModel(GaussianFrame):
+
     def __init__(self, sh_degree: int):
-        self.active_sh_degree = 0
-        self.max_sh_degree = sh_degree
-        self._xyz = torch.empty(0)
-        self._vel = torch.empty(0)
-        self._features_dc = torch.empty(0)
-        self._features_rest = torch.empty(0)
-        self._scaling = torch.empty(0)
-        self._rotation = torch.empty(0)
-        self._opacity = torch.empty(0)
-        self._cfd = torch.empty(0)
+        super().__init__(active_sh_degree=0, max_sh_degree=sh_degree, _xyz=torch.empty(0), _vel=torch.empty(0),
+                         _features_dc=torch.empty(0), _features_rest=torch.empty(0), _scaling=torch.empty(0),
+                         _rotation=torch.empty(0), _opacity=torch.empty(0), _cfd=torch.empty(0))
+
         self.max_radii2D = torch.empty(0)
         self.xyz_gradient_accum = torch.empty(0)
         self.denom = torch.empty(0)
         self.optimizer = None
         self.percent_dense = 0
         self.spatial_lr_scale = 0
-        self.setup_functions()
 
     def capture(self):
         return (
@@ -97,31 +179,6 @@ class GaussianModel:
         self.xyz_gradient_accum = xyz_gradient_accum
         self.denom = denom
         self.optimizer.load_state_dict(opt_dict)
-
-    @property
-    def get_scaling(self):
-        return self.scaling_activation(self._scaling)
-
-    @property
-    def get_rotation(self):
-        return self.rotation_activation(self._rotation)
-
-    @property
-    def get_xyz(self):
-        return self._xyz
-
-    @property
-    def get_features(self):
-        features_dc = self._features_dc
-        features_rest = self._features_rest
-        return torch.cat((features_dc, features_rest), dim=1)
-
-    @property
-    def get_opacity(self):
-        return self.opacity_activation(self._opacity)
-
-    def get_covariance(self, scaling_modifier=1):
-        return self.covariance_activation(self.get_scaling, scaling_modifier, self._rotation)
 
     def oneupSHdegree(self):
         if self.active_sh_degree < self.max_sh_degree:
@@ -185,42 +242,6 @@ class GaussianModel:
                 lr = self.xyz_scheduler_args(iteration)
                 param_group['lr'] = lr
                 return lr
-
-    def construct_list_of_attributes(self):
-        l = ['x', 'y', 'z', 'nx', 'ny', 'nz', 'vx', 'vy', 'vz']
-        # All channels except the 3 DC
-        for i in range(self._features_dc.shape[1] * self._features_dc.shape[2]):
-            l.append('f_dc_{}'.format(i))
-        for i in range(self._features_rest.shape[1] * self._features_rest.shape[2]):
-            l.append('f_rest_{}'.format(i))
-        l.append('opacity')
-        l.append('cfd')
-        for i in range(self._scaling.shape[1]):
-            l.append('scale_{}'.format(i))
-        for i in range(self._rotation.shape[1]):
-            l.append('rot_{}'.format(i))
-        return l
-
-    def save_ply(self, path):
-        mkdir_p(os.path.dirname(path))
-
-        xyz = self._xyz.detach().cpu().numpy()
-        vel = self._vel.detach().cpu().numpy()
-        normals = np.zeros_like(xyz)
-        f_dc = self._features_dc.detach().transpose(1, 2).flatten(start_dim=1).contiguous().cpu().numpy()
-        f_rest = self._features_rest.detach().transpose(1, 2).flatten(start_dim=1).contiguous().cpu().numpy()
-        opacities = self._opacity.detach().cpu().numpy()
-        cfd = self._cfd.detach().cpu().numpy()
-        scale = self._scaling.detach().cpu().numpy()
-        rotation = self._rotation.detach().cpu().numpy()
-
-        dtype_full = [(attribute, 'f4') for attribute in self.construct_list_of_attributes()]
-
-        elements = np.empty(xyz.shape[0], dtype=dtype_full)
-        attributes = np.concatenate((xyz, normals, vel, f_dc, f_rest, opacities, cfd, scale, rotation), axis=1)
-        elements[:] = list(map(tuple, attributes))
-        el = PlyElement.describe(elements, 'vertex')
-        PlyData([el]).write(path)
 
     def reset_opacity(self):
         opacities_new = inverse_sigmoid(torch.min(self.get_opacity, torch.ones_like(self.get_opacity) * 0.01))
@@ -451,3 +472,7 @@ class GaussianModel:
         self.xyz_gradient_accum[update_filter] += torch.norm(viewspace_point_tensor.grad[update_filter, :2], dim=-1,
                                                              keepdim=True)
         self.denom[update_filter] += 1
+
+    def to_gaussian_frame(self) -> GaussianFrame:
+        return GaussianFrame(self.active_sh_degree, self.max_sh_degree, self._xyz, self._vel, self._features_dc,
+                             self._features_rest, self._scaling, self._rotation, self._opacity, self._cfd)
