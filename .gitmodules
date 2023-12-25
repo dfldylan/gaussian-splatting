@@ -7,3 +7,7 @@
 [submodule "SIBR_viewers"]
 	path = SIBR_viewers
 	url = https://github.com/ustb-ai3d/sibr_core.git
+[submodule "submodules/dlf"]
+	path = submodules/dlf
+	url = https://github.com/dfldylan/DeepLagrangianFluids.git
+	branch = dev-dfl
