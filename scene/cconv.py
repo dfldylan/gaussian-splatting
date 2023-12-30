@@ -16,7 +16,7 @@ class MyParticleNetwork(torch.nn.Module):
             particle_radius=0.025,
             timestep=1 / 50,
             gravity=(0, -9.81, 0),
-            other_feats_channels=0,
+            feats_channels=13,
     ):
         super().__init__()
         self.layer_channels = [32, 64, 64, 3]
@@ -35,7 +35,7 @@ class MyParticleNetwork(torch.nn.Module):
         self._all_convs = []
 
         def window_poly6(r_sqr):
-            return torch.clamp((1 - r_sqr)**3, 0, 1)
+            return torch.clamp((1 - r_sqr) ** 3, 0, 1)
 
         def Conv(name, activation=None, **kwargs):
             conv_fn = ml3d.layers.ContinuousConv
@@ -57,17 +57,9 @@ class MyParticleNetwork(torch.nn.Module):
             self._all_convs.append((name, conv))
             return conv
 
-        self.conv0_fluid = Conv(name="conv0_fluid",
-                                in_channels=4 + other_feats_channels,
-                                filters=self.layer_channels[0],
+        self.conv0_fluid = Conv(name="conv0", in_channels=feats_channels, filters=2 * self.layer_channels[0],
                                 activation=None)
-        self.conv0_obstacle = Conv(name="conv0_obstacle",
-                                   in_channels=3,
-                                   filters=self.layer_channels[0],
-                                   activation=None)
-        self.dense0_fluid = torch.nn.Linear(in_features=4 +
-                                            other_feats_channels,
-                                            out_features=self.layer_channels[0])
+        self.dense0_fluid = torch.nn.Linear(in_features=feats_channels, out_features=self.layer_channels[0])
         torch.nn.init.xavier_uniform_(self.dense0_fluid.weight)
         torch.nn.init.zeros_(self.dense0_fluid.bias)
 
@@ -90,50 +82,21 @@ class MyParticleNetwork(torch.nn.Module):
             self.denses.append(dense)
             self.convs.append(conv)
 
-    def integrate_pos_vel(self, pos1, vel1):
-        """Apply gravity and integrate position and velocity"""
-        dt = self.timestep
-        vel2 = vel1 + dt * self.gravity
-        pos2 = pos1 + dt * (vel2 + vel1) / 2
-        return pos2, vel2
-
-    def compute_new_pos_vel(self, pos1, vel1, pos2, vel2, pos_correction):
-        """Apply the correction
-        pos1,vel1 are the positions and velocities from the previous timestep
-        pos2,vel2 are the positions after applying gravity and the integration step
-        """
-        dt = self.timestep
-        pos = pos2 + pos_correction
-        vel = (pos - pos1) / dt
-        return pos, vel
-
     def compute_correction(self,
                            pos,
-                           vel,
-                           other_feats,
-                           box,
-                           box_feats,
-                           fixed_radius_search_hash_table=None):
+                           feats):
         """Expects that the pos and vel has already been updated with gravity and velocity"""
 
         # compute the extent of the filters (the diameter)
         filter_extent = torch.tensor(self.filter_extent)
 
-        fluid_feats = [torch.ones_like(pos[:, 0:1]), vel]
-        if not other_feats is None:
-            fluid_feats.append(other_feats)
-        fluid_feats = torch.cat(fluid_feats, axis=-1)
+        feats = [torch.ones_like(pos[:, 0:1]), feats]
+        feats = torch.cat(feats, axis=-1)
 
-        self.ans_conv0_fluid = self.conv0_fluid(fluid_feats, pos, pos,
-                                                filter_extent)
-        self.ans_dense0_fluid = self.dense0_fluid(fluid_feats)
-        self.ans_conv0_obstacle = self.conv0_obstacle(box_feats, box, pos,
-                                                      filter_extent)
+        self.ans_conv0_fluid = self.conv0_fluid(feats, pos, pos, filter_extent)
+        self.ans_dense0_fluid = self.dense0_fluid(feats)
 
-        feats = torch.cat([
-            self.ans_conv0_obstacle, self.ans_conv0_fluid, self.ans_dense0_fluid
-        ],
-                          axis=-1)
+        feats = torch.cat([self.ans_conv0_fluid, self.ans_dense0_fluid], axis=-1)
 
         self.ans_convs = [feats]
         for conv, dense in zip(self.convs, self.denses):
@@ -159,7 +122,7 @@ class MyParticleNetwork(torch.nn.Module):
         self.pos_correction = (1.0 / 128) * self.ans_convs[-1]
         return self.pos_correction
 
-    def forward(self, inputs, fixed_radius_search_hash_table=None):
+    def forward(self, inputs):
         """computes 1 simulation timestep
         inputs: list or tuple with (pos,vel,feats,box,box_feats)
           pos and vel are the positions and velocities of the fluid particles.
@@ -167,25 +130,8 @@ class MyParticleNetwork(torch.nn.Module):
           box are the positions of the static particles and box_feats are the
           normals of the static particles.
         """
-        pos, vel, feats, box, box_feats = inputs
+        xyz, feats = inputs
 
-        pos2, vel2 = self.integrate_pos_vel(pos, vel)
-        pos_correction = self.compute_correction(
-            pos2, vel2, feats, box, box_feats, fixed_radius_search_hash_table)
-        pos2_corrected, vel2_corrected = self.compute_new_pos_vel(
-            pos, vel, pos2, vel2, pos_correction)
+        pos_correction = self.compute_correction(xyz, feats)
 
-        return pos2_corrected, vel2_corrected
-
-    # def init(self, feats_shape=None):
-    # """Runs the network with dummy data to initialize the shape of all variables"""
-    # pos = np.zeros(shape=(1, 3), dtype=np.float32)
-    # vel = np.zeros(shape=(1, 3), dtype=np.float32)
-    # if feats_shape is None:
-    # feats = None
-    # else:
-    # feats = np.zeros(shape=feats_shape, dtype=np.float32)
-    # box = np.zeros(shape=(1, 3), dtype=np.float32)
-    # box_feats = np.zeros(shape=(1, 3), dtype=np.float32)
-
-    # _ = self.__call__((pos, vel, feats, box, box_feats))
+        return pos_correction
