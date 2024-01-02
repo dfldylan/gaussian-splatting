@@ -42,11 +42,13 @@ class Scene:
         self.test_cameras = {}
 
         if os.path.exists(os.path.join(args.source_path, "sparse")):
-            assert False, "Not implementation for Colmap."
-            # scene_info = sceneLoadTypeCallbacks["Colmap"](args.source_path, args.images, args.eval)
+            scene_info = sceneLoadTypeCallbacks["Colmap"](args.source_path, args.images, args.eval)
         elif os.path.exists(os.path.join(args.source_path, "transforms_train.json")):
             print("Found transforms_train.json file, assuming Blender data set!")
             scene_info = sceneLoadTypeCallbacks["Blender"](args.source_path, args.white_background, args.eval)
+        elif os.path.exists(os.path.join(args.source_path, "box.pt")):
+            scene_info = sceneLoadTypeCallbacks["Neurofluid"](args.source_path, args.white_background, args.eval,
+                                                           timestep_x=args.timestep_x)
         else:
             assert False, "Could not recognize scene type!"
 
@@ -88,6 +90,7 @@ class Scene:
             self.gaussians.create_from_pcd(scene_info.point_cloud, self.cameras_extent)
 
         self.time_info = scene_info.time_info
+        self.extra = scene_info.extra
 
     def save(self, iteration):
         point_cloud_path = os.path.join(self.model_path, "point_cloud/iteration_{}".format(iteration))

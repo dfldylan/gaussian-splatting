@@ -54,6 +54,7 @@ class ModelParams(ParamGroup):
         self._white_background = False
         self.data_device = "cuda"
         self.eval = False
+        self.timestep_x = 1  # for timestep stride
         super().__init__(parser, "Loading Parameters", sentinel)
 
     def extract(self, args):
