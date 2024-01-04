@@ -127,6 +127,18 @@ class GaussianFrame:
         el = PlyElement.describe(elements, 'vertex')
         PlyData([el]).write(path)
 
+    def clone_detached(self):
+        """
+        Clones and detaches all tensor attributes of the GaussianFrame instance
+        from the computation graph.
+        """
+        cloned_instance = GaussianFrame(self.active_sh_degree, self.max_sh_degree,
+                                        self._xyz.clone().detach(), self._vel.clone().detach(),
+                                        self._features_dc.clone().detach(), self._features_rest.clone().detach(),
+                                        self._scaling.clone().detach(), self._rotation.clone().detach(),
+                                        self._opacity.clone().detach(), self._cfd.clone().detach())
+        return cloned_instance
+
 
 class GaussianModel(GaussianFrame):
 
