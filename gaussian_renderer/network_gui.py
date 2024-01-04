@@ -75,6 +75,7 @@ def receive():
             do_shs_python = bool(message["shs_python"])
             do_rot_scale_python = bool(message["rot_scale_python"])
             keep_alive = bool(message["keep_alive"])
+            flag_exit_to_next_batch = bool(message["next_batch"])
             scaling_modifier = message["scaling_modifier"]
             frame = int(message.get('frame', -1))
             world_view_transform = torch.reshape(torch.tensor(message["view_matrix"]), (4, 4)).cuda()
@@ -87,6 +88,6 @@ def receive():
             print("")
             traceback.print_exc()
             raise e
-        return custom_cam, do_training, do_shs_python, do_rot_scale_python, keep_alive, scaling_modifier, frame
+        return custom_cam, do_training, do_shs_python, do_rot_scale_python, keep_alive, scaling_modifier, frame, flag_exit_to_next_batch
     else:
-        return None, None, None, None, None, None, None
+        return None, None, None, None, None, None, None, None
