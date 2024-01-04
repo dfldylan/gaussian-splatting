@@ -15,3 +15,5 @@ dependencies:
   - pip:
     - submodules/diff-gaussian-rasterization
     - submodules/simple-knn
+    - nbconvert==7.4.0
+    - jupyterlab
