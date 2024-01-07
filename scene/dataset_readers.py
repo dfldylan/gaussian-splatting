@@ -12,7 +12,7 @@
 import os
 import sys
 from PIL import Image
-from typing import NamedTuple
+from typing import NamedTuple, List
 from scene.colmap_loader import read_extrinsics_text, read_intrinsics_text, qvec2rotmat, \
     read_extrinsics_binary, read_intrinsics_binary, read_points3D_binary, read_points3D_text
 from utils.graphics_utils import getWorld2View2, focal2fov, fov2focal
@@ -22,6 +22,12 @@ from pathlib import Path
 from plyfile import PlyData, PlyElement
 from utils.sh_utils import SH2RGB
 from scene.gaussian_model import BasicPointCloud
+
+
+class TimeSeriesInfo(NamedTuple):
+    start_time: float
+    time_step: float
+    num_frames: int
 
 
 class CameraInfo(NamedTuple):
@@ -38,6 +44,32 @@ class CameraInfo(NamedTuple):
     time: float
 
 
+def handle_time(cam_infos: List[CameraInfo]) -> TimeSeriesInfo:
+    if not cam_infos:
+        raise ValueError("cam_infos is empty")
+
+    # 提取所有时间信息并去重
+    times = sorted(set(cam_info.time for cam_info in cam_infos))
+
+    # 计算相邻时刻的差值
+    time_differences = [t2 - t1 for t1, t2 in zip(times, times[1:])]
+
+    # 找到最小的非零时间差异作为时间步长的估计
+    min_non_zero_diff = min(diff for diff in time_differences if diff > 0)
+
+    # 检查所有时间差异是否是估计步长的整数倍
+    if not all(np.isclose(diff % min_non_zero_diff, 0) for diff in time_differences):
+        raise ValueError("Time intervals are not multiples of a single minimum step")
+
+    # 确定开始时间和帧数
+    start_time = times[0]
+    # 计算总时间跨度
+    total_time_span = times[-1] - times[0]
+    # 计算帧数，根据情况向最接近的整数四舍五入
+    num_frames = round(total_time_span / min_non_zero_diff) + 1
+
+    return TimeSeriesInfo(start_time, min_non_zero_diff, num_frames)
+
 
 class SceneInfo(NamedTuple):
     point_cloud: BasicPointCloud
@@ -45,6 +77,7 @@ class SceneInfo(NamedTuple):
     test_cameras: list
     nerf_normalization: dict
     ply_path: str
+    time_info: TimeSeriesInfo = TimeSeriesInfo(0, 0, 1)
 
 
 def getNerfppNorm(cam_info):
@@ -197,7 +230,7 @@ def readCamerasFromTransforms(path, transformsfile, white_background, extension=
         frames = contents["frames"]
         for idx, frame in enumerate(frames):
             cam_name = os.path.join(path, frame["file_path"] + extension)
-            time = frame["time"]
+            time = frame.get('time', 0)
 
             # NeRF 'transform_matrix' is a camera-to-world transform
             c2w = np.array(frame["transform_matrix"])
