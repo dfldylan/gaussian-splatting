@@ -90,15 +90,19 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         bg = torch.rand((3), device="cuda") if opt.random_background else background
 
         # Pick a random Camera
-        if not viewpoint_stack:
-            if iteration % 10000 < 1000:
+        if iteration % 10000 < 1000:
+            if not viewpoint_stack:
                 viewpoint_stack = scene.getTrainCameras(
                     frame_index=scene.time_info.get_frame_id(trans.base_time)).copy()
-            else:
+            viewpoint_cam: Camera = viewpoint_stack.pop(randint(0, len(viewpoint_stack) - 1))
+            dt_xyz, dt_scaling, dt_rotation = trans(viewpoint_cam.time, gaussians.get_xyz)
+            render_pkg = render(viewpoint_cam, gaussians.move(dt_xyz, dt_scaling, dt_rotation), pipe, bg)
+        else:
+            if not viewpoint_stack:
                 viewpoint_stack = scene.getTrainCameras().copy()
-        viewpoint_cam: Camera = viewpoint_stack.pop(randint(0, len(viewpoint_stack) - 1))
-        dt_xyz, dt_scaling, dt_rotation = trans(viewpoint_cam.time, gaussians.get_xyz)
-        render_pkg = render(viewpoint_cam, gaussians.move(dt_xyz, dt_scaling, dt_rotation), pipe, bg)
+            viewpoint_cam: Camera = viewpoint_stack.pop(randint(0, len(viewpoint_stack) - 1))
+            dt_xyz, dt_scaling, dt_rotation = trans(viewpoint_cam.time, gaussians.get_xyz.clone().detach())
+            render_pkg = render(viewpoint_cam, gaussians.move_detach(dt_xyz, dt_scaling, dt_rotation), pipe, bg)
         image, viewspace_point_tensor, visibility_filter, radii = render_pkg["render"], render_pkg["viewspace_points"], \
             render_pkg["visibility_filter"], render_pkg["radii"]
 

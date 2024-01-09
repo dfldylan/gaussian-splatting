@@ -1,6 +1,5 @@
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 from utils.position_encoding import get_embedder
 from arguments import ModelParams
 from scene.dataset_readers import TimeSeriesInfo
@@ -65,7 +64,7 @@ class MLP(nn.Module):
 
     def forward(self, x):
         for layer in self.layers:
-            x = F.relu(layer(x))
+            x = torch.sigmoid(layer(x))
             # x = self.dropout(x)  # Apply dropout after the activation function
         x = self.output_layer(x)
         return x
