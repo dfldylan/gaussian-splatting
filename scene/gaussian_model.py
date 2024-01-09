@@ -35,7 +35,16 @@ class GaussianFrame:
 
         # 然后在你的类中使用这个函数
         self.scaling_activation = modified_sigmoid
-        self.scaling_inverse_activation = torch.log
+
+        def modified_sigmoid_inverse(y):
+            # 首先，将 y 从 [0.01, 0.02] 转换回 [0, 1]
+            original_sigmoid_output = (y / 0.01) - 1
+
+            # 使用 torch.logit 应用逆 sigmoid 变换
+            return torch.logit(original_sigmoid_output)
+
+        # 在类中使用
+        self.scaling_inverse_activation = modified_sigmoid_inverse
 
         self.covariance_activation = build_covariance_from_scaling_rotation
 
