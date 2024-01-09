@@ -91,7 +91,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
 
         # Pick a random Camera
         if not viewpoint_stack:
-            if iteration % 20000 < 7000:
+            if iteration % 10000 < 1000:
                 viewpoint_stack = scene.getTrainCameras(
                     frame_index=scene.time_info.get_frame_id(trans.base_time)).copy()
             else:
@@ -227,7 +227,7 @@ if __name__ == "__main__":
     lp = ModelParams(parser)
     op = OptimizationParams(parser)
     pp = PipelineParams(parser)
-    parser.add_argument('--ip', type=str, default="127.0.0.1")
+    parser.add_argument('--ip', type=str, default="0.0.0.0")
     parser.add_argument('--port', type=int, default=6009)
     parser.add_argument('--debug_from', type=int, default=-1)
     parser.add_argument('--detect_anomaly', action='store_true', default=False)

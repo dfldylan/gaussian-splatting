@@ -19,7 +19,7 @@ class TransModel:
         else:
             self.embed, embedder_dim = get_embedder(self.multires)
             self.mlp = MLP(embedder_dim + 1, args.hidden_sizes, 3 + 3 + 4)
-        self.optimizer = torch.optim.Adam(self.mlp.parameters(), lr=0.0000016, eps=1e-15)
+        self.optimizer = torch.optim.Adam(self.mlp.parameters(), lr=0.001, eps=1e-15)
 
     def __call__(self, time, xyz, *args, **kwargs):
         dt_time = time - self.base_time
