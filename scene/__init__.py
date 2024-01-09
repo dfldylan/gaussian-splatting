@@ -99,7 +99,7 @@ class Scene:
 
     def getTrainCameras(self, scale=1.0, frame_index=None) -> List[Camera]:
         cameraList = self.train_cameras[scale]
-        if frame_index:
+        if frame_index is not None:
             if frame_index >= self.time_info.num_frames:
                 return []
             find_time = self.time_info.start_time + frame_index * self.time_info.time_step
@@ -109,7 +109,7 @@ class Scene:
 
     def getTestCameras(self, scale=1.0, frame_index=None) -> List[Camera]:
         cameraList = self.test_cameras[scale]
-        if frame_index:
+        if frame_index is not None:
             if frame_index >= self.time_info.num_frames:
                 return []
             find_time = self.time_info.start_time + frame_index * self.time_info.time_step
