@@ -30,7 +30,11 @@ class GaussianFrame:
             symm = strip_symmetric(actual_covariance)
             return symm
 
-        self.scaling_activation = torch.exp
+        def modified_sigmoid(x):
+            return 0.01 * (torch.sigmoid(x) + 1)
+
+        # 然后在你的类中使用这个函数
+        self.scaling_activation = modified_sigmoid
         self.scaling_inverse_activation = torch.log
 
         self.covariance_activation = build_covariance_from_scaling_rotation

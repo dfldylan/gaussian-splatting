@@ -55,6 +55,12 @@ class ModelParams(ParamGroup):
         self.data_device = "cuda"
         self.eval = False
         self.timestep_x = 1  # for timestep stride
+
+        self.multires = 8
+        self.base_frame = 0
+        self.hidden_sizes = [128, 64, 32, 16]
+        self.time_encoding = True
+        # self.dropout_prob = 0.5
         super().__init__(parser, "Loading Parameters", sentinel)
 
     def extract(self, args):
@@ -71,12 +77,12 @@ class PipelineParams(ParamGroup):
 
 class OptimizationParams(ParamGroup):
     def __init__(self, parser):
-        self.iterations = 30_000
+        self.iterations = 30_000_00
         self.position_lr_init = 0.00016
         self.position_lr_final = 0.0000016
         self.position_lr_delay_mult = 0.01
-        self.position_lr_max_steps = 30_000
-        self.velocity_lr_init = None
+        self.position_lr_max_steps = 30_000_00
+        self.velocity_lr_init = 0.00008
         self.feature_lr = 0.0025
         self.opacity_lr = 0.05
         self.cfd_lr = 0.05
@@ -84,10 +90,10 @@ class OptimizationParams(ParamGroup):
         self.rotation_lr = 0.001
         self.percent_dense = 0.01
         self.lambda_dssim = 0.2
-        self.densification_interval = 100
-        self.opacity_reset_interval = 3000
-        self.densify_from_iter = 500
-        self.densify_until_iter = 15_000
+        self.densification_interval = 10000
+        self.opacity_reset_interval = 300000
+        self.densify_from_iter = 50000
+        self.densify_until_iter = 15_000_00
         self.densify_grad_threshold = 0.0002
         self.random_background = False
         super().__init__(parser, "Optimization Parameters")
