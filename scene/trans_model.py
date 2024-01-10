@@ -1,52 +1,36 @@
 import torch
 import torch.nn as nn
-from utils.position_encoding import get_embedder
 from arguments import ModelParams
 from scene.dataset_readers import TimeSeriesInfo
 
 
 class TransModel:
-    def __init__(self, args: ModelParams, time_info: TimeSeriesInfo):
-        if args.hidden_sizes is None:
-            args.hidden_sizes = [64, 32, 16]
+    def __init__(self, args: ModelParams, time_info: TimeSeriesInfo, points_num:int):
         self.base_time = time_info.get_time(args.base_frame)
-        self.multires = args.multires
-        self.time_encoding = args.time_encoding
-        if self.time_encoding:
-            self.embed, embedder_dim = get_embedder(self.multires, i=4)
-            self.mlp = MLP(embedder_dim, args.hidden_sizes, 3 + 3 + 4)
-        else:
-            self.embed, embedder_dim = get_embedder(self.multires)
-            self.mlp = MLP(embedder_dim + 1, args.hidden_sizes, 3 + 3 + 4)
-        self.optimizer = torch.optim.Adam(self.mlp.parameters(), lr=0.001, eps=1e-15)
+        self.feats= nn.Parameter(torch.zeros((points_num,args.track_channel),device='cuda'))
+        self.mlp = MLP(args.track_channel + 1, args.hidden_sizes, 3 + 3 + 4)
+        self.optimizer = torch.optim.Adam(list(self.mlp.parameters()) + [self.feats],lr=0.0001)
 
-    def __call__(self, time, xyz, *args, **kwargs):
+    def __call__(self, time, *args, **kwargs):
         dt_time = time - self.base_time
-        if self.time_encoding:
-            embedder_xyz = self.embed(
-                torch.concat((xyz, torch.full(xyz[:, :1].size(), dt_time, device='cuda')), dim=-1))
-            output = self.mlp(embedder_xyz)
-        else:
-            embedder_xyz = self.embed(xyz)  # [-1, embedder_dim]
-            output = self.mlp(
-                torch.concat((embedder_xyz, torch.full(embedder_xyz[:, :1].size(), dt_time, device='cuda')), dim=-1))
+        output = self.mlp(torch.concat((self.feats, torch.full(self.feats[:, :1].size(), dt_time, device='cuda')), dim=-1))
         dt_xyz, dt_scaling, dt_rotation = torch.split(dt_time * output, [3, 3, 4], dim=-1)
         return dt_xyz, dt_scaling, dt_rotation
 
     def capture(self):
         return (
             self.base_time,
-            self.multires,
-            self.mlp,
+            self.feats,
+            self.mlp.state_dict(),
             self.optimizer.state_dict(),
         )
 
     def restore(self, params):
         (self.base_time,
-         self.multires,
-         self.mlp,
+         self.feats,
+         mlp_dict,
          opt_dict) = params
-        self.embed, _ = get_embedder(self.multires)
+        self.mlp.load_state_dict(mlp_dict)
         self.optimizer.load_state_dict(opt_dict)
 
 

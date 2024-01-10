@@ -13,6 +13,9 @@ from argparse import ArgumentParser, Namespace
 import sys
 import os
 
+import numpy as np
+
+
 class GroupParams:
     pass
 
@@ -25,7 +28,7 @@ class ParamGroup:
                 shorthand = True
                 key = key[1:]
             t = type(value)
-            value = value if not fill_none else None 
+            value = value if not fill_none else None
             if shorthand:
                 if t == bool:
                     group.add_argument("--" + key, ("-" + key[0:1]), default=value, action="store_true")
@@ -44,7 +47,7 @@ class ParamGroup:
                 setattr(group, arg[0], arg[1])
         return group
 
-class ModelParams(ParamGroup): 
+class ModelParams(ParamGroup):
     def __init__(self, parser, sentinel=False):
         self.sh_degree = 3
         self._source_path = ""
@@ -56,11 +59,9 @@ class ModelParams(ParamGroup):
         self.eval = False
         self.timestep_x = 1  # for timestep stride
 
-        self.multires = 8
         self.base_frame = 0
         self.hidden_sizes = [128, 64, 32, 16]
-        self.time_encoding = True
-        # self.dropout_prob = 0.5
+        self.track_channel = 128
         super().__init__(parser, "Loading Parameters", sentinel)
 
     def extract(self, args):
@@ -90,8 +91,8 @@ class OptimizationParams(ParamGroup):
         self.rotation_lr = 0.001
         self.percent_dense = 0.01
         self.lambda_dssim = 0.2
-        self.densification_interval = 10000
-        self.opacity_reset_interval = 300000
+        self.densification_interval = np.inf
+        self.opacity_reset_interval = np.inf
         self.densify_from_iter = 50000
         self.densify_until_iter = 15_000_00
         self.densify_grad_threshold = 0.0002

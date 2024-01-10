@@ -38,7 +38,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
     tb_writer = prepare_output_and_logger(dataset)
     gaussians = GaussianModel(dataset.sh_degree)
     scene = Scene(dataset, gaussians)
-    trans = TransModel(dataset, scene.time_info)
+    trans = TransModel(dataset, scene.time_info, gaussians._xyz.shape[0])
     gaussians.training_setup(opt)
     if checkpoint:
         (model_params, trans_params, first_iter) = torch.load(checkpoint)
@@ -64,7 +64,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                 custom_cam: MiniCam
                 custom_cam, do_training, pipe.convert_SHs_python, pipe.compute_cov3D_python, keep_alive, scaling_modifer, frame = network_gui.receive()
                 if custom_cam != None:
-                    dt_xyz, dt_scaling, dt_rotation = trans(scene.time_info.get_time(frame), gaussians.get_xyz)
+                    dt_xyz, dt_scaling, dt_rotation = trans(scene.time_info.get_time(frame))
                     net_image = render(custom_cam, gaussians.move(dt_xyz, dt_scaling, dt_rotation), pipe, background,
                                        scaling_modifer)["render"]
                     net_image_bytes = memoryview((torch.clamp(net_image, min=0, max=1.0) * 255).byte().permute(1, 2,
@@ -90,19 +90,11 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         bg = torch.rand((3), device="cuda") if opt.random_background else background
 
         # Pick a random Camera
-        if iteration % 10000 < 1000:
-            if not viewpoint_stack:
-                viewpoint_stack = scene.getTrainCameras(
-                    frame_index=scene.time_info.get_frame_id(trans.base_time)).copy()
-            viewpoint_cam: Camera = viewpoint_stack.pop(randint(0, len(viewpoint_stack) - 1))
-            dt_xyz, dt_scaling, dt_rotation = trans(viewpoint_cam.time, gaussians.get_xyz)
-            render_pkg = render(viewpoint_cam, gaussians.move(dt_xyz, dt_scaling, dt_rotation), pipe, bg)
-        else:
-            if not viewpoint_stack:
-                viewpoint_stack = scene.getTrainCameras().copy()
-            viewpoint_cam: Camera = viewpoint_stack.pop(randint(0, len(viewpoint_stack) - 1))
-            dt_xyz, dt_scaling, dt_rotation = trans(viewpoint_cam.time, gaussians.get_xyz.clone().detach())
-            render_pkg = render(viewpoint_cam, gaussians.move_detach(dt_xyz, dt_scaling, dt_rotation), pipe, bg)
+        if not viewpoint_stack:
+            viewpoint_stack = scene.getTrainCameras().copy()
+        viewpoint_cam: Camera = viewpoint_stack.pop(randint(0, len(viewpoint_stack) - 1))
+        dt_xyz, dt_scaling, dt_rotation = trans(viewpoint_cam.time)
+        render_pkg = render(viewpoint_cam, gaussians.move(dt_xyz, dt_scaling, dt_rotation), pipe, bg)
         image, viewspace_point_tensor, visibility_filter, radii = render_pkg["render"], render_pkg["viewspace_points"], \
             render_pkg["visibility_filter"], render_pkg["radii"]
 
@@ -147,7 +139,9 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
             # Optimizer step
             if iteration < opt.iterations:
                 gaussians.optimizer.step()
+                trans.optimizer.step()
                 gaussians.optimizer.zero_grad(set_to_none=True)
+                trans.optimizer.zero_grad(set_to_none=True)
 
             if (iteration in checkpoint_iterations):
                 print("\n[ITER {}] Saving Checkpoint".format(iteration))
@@ -199,7 +193,7 @@ def training_report(tb_writer, iteration, Ll1, loss, l1_loss, elapsed, testing_i
                 psnr_test = 0.0
                 viewpoint: Camera
                 for idx, viewpoint in enumerate(config['cameras']):
-                    dt_xyz, dt_scaling, dt_rotation = transFunc(viewpoint.time, scene.gaussians.get_xyz)
+                    dt_xyz, dt_scaling, dt_rotation = transFunc(viewpoint.time)
                     image = torch.clamp(
                         renderFunc(viewpoint, scene.gaussians.move(dt_xyz, dt_scaling, dt_rotation), *renderArgs)[
                             "render"], 0.0, 1.0)
