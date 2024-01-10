@@ -11,7 +11,7 @@
 
 import os
 import torch
-from random import randint
+from random import choice
 from utils.loss_utils import l1_loss, ssim
 from gaussian_renderer import render, network_gui
 import sys
@@ -92,7 +92,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         # Pick a random Camera
         if not viewpoint_stack:
             viewpoint_stack = scene.getTrainCameras().copy()
-        viewpoint_cam: Camera = viewpoint_stack.pop(randint(0, len(viewpoint_stack) - 1))
+        viewpoint_cam: Camera = choice(viewpoint_stack)
         dt_xyz, dt_scaling, dt_rotation = trans(viewpoint_cam.time)
         render_pkg = render(viewpoint_cam, gaussians.move(dt_xyz, dt_scaling, dt_rotation), pipe, bg)
         image, viewspace_point_tensor, visibility_filter, radii = render_pkg["render"], render_pkg["viewspace_points"], \
