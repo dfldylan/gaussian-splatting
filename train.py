@@ -24,6 +24,7 @@ from tqdm import tqdm
 from utils.image_utils import psnr
 from argparse import ArgumentParser, Namespace
 from arguments import ModelParams, PipelineParams, OptimizationParams
+from utils.density import compute_density
 
 try:
     from torch.utils.tensorboard import SummaryWriter
@@ -94,7 +95,8 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
             viewpoint_stack = scene.getTrainCameras().copy()
         viewpoint_cam: Camera = choice(viewpoint_stack)
         dt_xyz, dt_scaling, dt_rotation = trans(viewpoint_cam.time)
-        render_pkg = render(viewpoint_cam, gaussians.move(dt_xyz, dt_scaling, dt_rotation), pipe, bg)
+        gaussian_frame = gaussians.move(dt_xyz, dt_scaling, dt_rotation)
+        render_pkg = render(viewpoint_cam, gaussian_frame, pipe, bg)
         image, viewspace_point_tensor, visibility_filter, radii = render_pkg["render"], render_pkg["viewspace_points"], \
             render_pkg["visibility_filter"], render_pkg["radii"]
 
@@ -102,6 +104,10 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         gt_image = viewpoint_cam.original_image.cuda()
         Ll1 = l1_loss(image, gt_image)
         loss = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * (1.0 - ssim(image, gt_image))
+        if iteration > 1000000:
+            density = compute_density(gaussian_frame.get_xyz, 0.1)
+            density_error = 1e-10 * torch.mean(torch.square(density - torch.mean(density, dim=0, keepdim=True)))
+            loss = loss + density_error
         loss.backward()
 
         iter_end.record()
