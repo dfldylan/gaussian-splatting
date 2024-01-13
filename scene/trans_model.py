@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 from arguments import ModelParams
-from scene.dataset_readers import TimeSeriesInfo
+from utils.time_utils import TimeSeriesInfo
 
 
 class TransModel:
