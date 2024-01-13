@@ -9,7 +9,7 @@ class TransModel:
         self.base_time = time_info.get_time(args.base_frame)
         self.feats= nn.Parameter(torch.zeros((points_num,args.track_channel),device='cuda'))
         self.mlp = MLP(args.track_channel + 1, args.hidden_sizes, 3 + 3 + 4)
-        self.optimizer = torch.optim.Adam(list(self.mlp.parameters()) + [self.feats],lr=0.0001)
+        self.optimizer = torch.optim.Adam(list(self.mlp.parameters()) + [self.feats],lr=0.00001)
 
     def __call__(self, time, *args, **kwargs):
         dt_time = time - self.base_time
@@ -31,7 +31,64 @@ class TransModel:
          mlp_dict,
          opt_dict) = params
         self.mlp.load_state_dict(mlp_dict)
+        self.optimizer = torch.optim.Adam(list(self.mlp.parameters()) + [self.feats],lr=0.0001)
         self.optimizer.load_state_dict(opt_dict)
+
+    def prune_points(self, valid_points_mask):
+        print("remove {} points".format(torch.sum(~valid_points_mask).cpu().detach().numpy()))
+        optimizable_tensors = self._prune_optimizer(valid_points_mask)
+        self.feats = optimizable_tensors["feats"]
+
+    def densify(self, selected_pts_mask, N=1):
+        print("add {} points".format(torch.sum(selected_pts_mask).cpu().detach().numpy()))
+        feats = self.feats[selected_pts_mask].repeat(N, 1)
+        self.feats = self.cat_tensors_to_optimizer({'feats': feats})['feats']
+
+    def cat_tensors_to_optimizer(self, tensors_dict):
+        optimizable_tensors = {}
+        assert len(self.optimizer.param_groups) == 1
+        for group in self.optimizer.param_groups:
+            assert len(group["params"]) > 1
+            extension_tensor = tensors_dict["feats"]
+            stored_state = self.optimizer.state.get(group['params'][-1], None)
+            if stored_state is not None:
+
+                stored_state["exp_avg"] = torch.cat((stored_state["exp_avg"], torch.zeros_like(extension_tensor)),
+                                                    dim=0)
+                stored_state["exp_avg_sq"] = torch.cat((stored_state["exp_avg_sq"], torch.zeros_like(extension_tensor)),
+                                                       dim=0)
+
+                del self.optimizer.state[group['params'][-1]]
+                group["params"][-1] = nn.Parameter(
+                    torch.cat((group["params"][-1], extension_tensor), dim=0).requires_grad_(True))
+                self.optimizer.state[group['params'][-1]] = stored_state
+
+                optimizable_tensors["feats"] = group["params"][-1]
+            else:
+                group["params"][-1] = nn.Parameter(
+                    torch.cat((group["params"][-1], extension_tensor), dim=0).requires_grad_(True))
+                optimizable_tensors["feats"] = group["params"][-1]
+
+        return optimizable_tensors
+
+    def _prune_optimizer(self, mask):
+        optimizable_tensors = {}
+        assert len(self.optimizer.param_groups) == 1
+        for group in self.optimizer.param_groups:
+            stored_state = self.optimizer.state.get(group['params'][-1], None)
+            if stored_state is not None:
+                stored_state["exp_avg"] = stored_state["exp_avg"][mask]
+                stored_state["exp_avg_sq"] = stored_state["exp_avg_sq"][mask]
+
+                del self.optimizer.state[group['params'][-1]]
+                group["params"][-1] = nn.Parameter((group["params"][-1][mask].requires_grad_(True)))
+                self.optimizer.state[group['params'][-1]] = stored_state
+
+                optimizable_tensors['feats'] = group["params"][-1]
+            else:
+                group["params"][-1] = nn.Parameter(group["params"][-1][mask].requires_grad_(True))
+                optimizable_tensors['feats'] = group["params"][-1]
+        return optimizable_tensors
 
 
 class MLP(nn.Module):

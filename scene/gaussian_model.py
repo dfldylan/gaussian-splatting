@@ -20,6 +20,7 @@ from utils.sh_utils import RGB2SH
 from simple_knn._C import distCUDA2
 from utils.graphics_utils import BasicPointCloud
 from utils.general_utils import strip_symmetric, build_scaling_rotation
+from scene.trans_model import TransModel
 
 
 class GaussianFrame:
@@ -359,7 +360,7 @@ class GaussianModel(GaussianFrame):
                 optimizable_tensors[group["name"]] = group["params"][0]
         return optimizable_tensors
 
-    def prune_points(self, mask):
+    def prune_points(self, mask, trans: TransModel = None):
         valid_points_mask = ~mask
         optimizable_tensors = self._prune_optimizer(valid_points_mask)
 
@@ -376,6 +377,8 @@ class GaussianModel(GaussianFrame):
 
         self.denom = self.denom[valid_points_mask]
         self.max_radii2D = self.max_radii2D[valid_points_mask]
+
+        trans.prune_points(valid_points_mask=valid_points_mask)
 
     def cat_tensors_to_optimizer(self, tensors_dict):
         optimizable_tensors = {}
@@ -428,7 +431,7 @@ class GaussianModel(GaussianFrame):
         self.denom = torch.zeros((self.get_xyz.shape[0], 1), device="cuda")
         self.max_radii2D = torch.zeros((self.get_xyz.shape[0]), device="cuda")
 
-    def densify_and_split(self, grads, grad_threshold, scene_extent, N=2):
+    def densify_and_split(self, grads, grad_threshold, scene_extent, N=2, trans: TransModel = None):
         n_init_points = self.get_xyz.shape[0]
         # Extract points that satisfy the gradient condition
         padded_grad = torch.zeros((n_init_points), device="cuda")
@@ -454,11 +457,13 @@ class GaussianModel(GaussianFrame):
         self.densification_postfix(new_xyz, new_vel, new_features_dc, new_features_rest, new_opacity, new_cfd,
                                    new_scaling, new_rotation)
 
+        trans.densify(selected_pts_mask, N)
+
         prune_filter = torch.cat(
             (selected_pts_mask, torch.zeros(N * selected_pts_mask.sum(), device="cuda", dtype=bool)))
-        self.prune_points(prune_filter)
+        self.prune_points(prune_filter, trans)
 
-    def densify_and_clone(self, grads, grad_threshold, scene_extent):
+    def densify_and_clone(self, grads, grad_threshold, scene_extent, trans: TransModel = None):
         # Extract points that satisfy the gradient condition
         selected_pts_mask = torch.where(torch.norm(grads, dim=-1) >= grad_threshold, True, False)
         selected_pts_mask = torch.logical_and(selected_pts_mask,
@@ -477,19 +482,23 @@ class GaussianModel(GaussianFrame):
         self.densification_postfix(new_xyz, new_vel, new_features_dc, new_features_rest, new_opacities, new_cfd,
                                    new_scaling, new_rotation)
 
-    def densify_and_prune(self, max_grad, min_opacity, extent, max_screen_size):
+        trans.densify(selected_pts_mask)
+
+    def densify_and_prune(self, max_grad, min_opacity, extent, max_screen_size, trans: TransModel = None):
         grads = self.xyz_gradient_accum / self.denom
         grads[grads.isnan()] = 0.0
 
-        self.densify_and_clone(grads, max_grad, extent)
-        self.densify_and_split(grads, max_grad, extent)
+        self.densify_and_clone(grads, max_grad, extent, trans=trans)
+        self.densify_and_split(grads, max_grad, extent, trans=trans)
 
         prune_mask = (self.get_opacity < min_opacity).squeeze()
+        sh_mask = torch.all(torch.all(self.get_features < 1e-5, dim=-1), dim=-1)
+        prune_mask = torch.logical_or(prune_mask, sh_mask)
         if max_screen_size:
             big_points_vs = self.max_radii2D > max_screen_size
             big_points_ws = self.get_scaling.max(dim=1).values > 0.1 * extent
             prune_mask = torch.logical_or(torch.logical_or(prune_mask, big_points_vs), big_points_ws)
-        self.prune_points(prune_mask)
+        self.prune_points(prune_mask, trans=trans)
 
         torch.cuda.empty_cache()
 
