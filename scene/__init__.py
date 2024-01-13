@@ -93,9 +93,9 @@ class Scene:
         self.time_info = scene_info.time_info
         self.extra = scene_info.extra
 
-    def save(self, iteration):
-        point_cloud_path = os.path.join(self.model_path, "point_cloud/iteration_{}".format(iteration))
-        self.gaussians.save_ply(os.path.join(point_cloud_path, "point_cloud.ply"))
+    def save(self, batch):
+        point_cloud_path = os.path.join(self.model_path, "point_cloud/batch_{}_.ply".format(batch))
+        self.gaussians.save_ply(point_cloud_path)
 
     def getTrainCameras(self, scale=1.0, frame_index=None) -> List[Camera]:
         cameraList = self.train_cameras[scale]
