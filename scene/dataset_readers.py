@@ -41,7 +41,7 @@ class CameraInfo(NamedTuple):
     image_name: str
     width: int
     height: int
-    time: float
+    time: float = 0.0
 
 
 def handle_time(cam_infos: List[CameraInfo]) -> TimeSeriesInfo:
