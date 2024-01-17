@@ -20,6 +20,7 @@ from utils.camera_utils import cameraList_from_camInfos, camera_to_JSON
 from typing import List
 from scene.cameras import Camera
 
+
 class Scene:
     gaussians: GaussianModel
 
@@ -44,12 +45,14 @@ class Scene:
 
         if os.path.exists(os.path.join(args.source_path, "sparse")):
             scene_info = sceneLoadTypeCallbacks["Colmap"](args.source_path, args.images, args.eval)
+        elif os.path.exists(os.path.join(args.source_path, "views.txt")):
+            scene_info = sceneLoadTypeCallbacks["FixedColmap"](args.source_path, args.eval)
         elif os.path.exists(os.path.join(args.source_path, "transforms_train.json")):
             print("Found transforms_train.json file, assuming Blender data set!")
             scene_info = sceneLoadTypeCallbacks["Blender"](args.source_path, args.white_background, args.eval)
         elif os.path.exists(os.path.join(args.source_path, "box.pt")):
             scene_info = sceneLoadTypeCallbacks["Neurofluid"](args.source_path, args.white_background, args.eval,
-                                                           timestep_x=args.timestep_x)
+                                                              timestep_x=args.timestep_x)
         else:
             assert False, "Could not recognize scene type!"
 
