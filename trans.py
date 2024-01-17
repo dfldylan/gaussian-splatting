@@ -37,24 +37,28 @@ def trans_sets(dataset: ModelParams, opt, checkpoint, time_info: TimeSeriesInfo 
         if time_info is None:
             time_info = scene.time_info
 
-        save_path = os.path.join(dataset.model_path, 'npz')
+        save_path = os.path.join(dataset.model_path, 'npz0')
         os.makedirs(save_path, exist_ok=True)
 
         json.dump(time_info._asdict(), open(os.path.join(save_path, 'time_info.json'), 'w'))
-
-        for i in range(time_info.num_frames):
+        mask = None
+        for i in reversed(range(time_info.num_frames)):
             time = time_info.start_time + i * time_info.time_step
             print('Frame {}, Time {}'.format(i, time))
             dt_xyz, dt_scaling, dt_rotation = trans(time)
             gaussian_frame = gaussians.move(dt_xyz, dt_scaling, dt_rotation)
-            np.savez(os.path.join(save_path, '{:04}.npz'.format(i)), pos=filter_gaussian(gaussian_frame))
+            pos, mask = filter_gaussian(gaussian_frame, mask)
+            np.savez(os.path.join(save_path, '{:04}.npz'.format(i)), pos=pos)
 
 
-def filter_gaussian(gaussian_frame: GaussianFrame):
+def filter_gaussian(gaussian_frame: GaussianFrame, mask=None):
     xyz = gaussian_frame.get_xyz.cpu().numpy()
-    mask = gaussian_frame.get_opacity.cpu().numpy() < 0.1
-    xyz_filtered = xyz[mask[:, 0]]
-    return xyz_filtered
+    if mask is None:
+        mask1 = gaussian_frame.get_opacity.cpu().numpy()[:,0] > 0.1
+        mask2 = np.any(np.any(gaussian_frame.get_features.cpu().numpy() > 1e-5, axis=-1), axis=-1)
+        mask = np.logical_and(mask1, mask2)
+    xyz_filtered = xyz[mask]
+    return xyz_filtered, mask
 
 
 if __name__ == "__main__":
