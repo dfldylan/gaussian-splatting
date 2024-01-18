@@ -33,7 +33,7 @@ try:
 except ImportError:
     TENSORBOARD_FOUND = False
 
-
+dataset: ModelParams
 def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoint_iterations, checkpoint, debug_from):
     first_iter = 0
     tb_writer = prepare_output_and_logger(dataset)
@@ -90,8 +90,9 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
 
         bg = torch.rand((3), device="cuda") if opt.random_background else background
 
-        # Pick a random Camera
-        if not viewpoint_stack:
+        if dataset.static_init:
+            viewpoint_stack = scene.getTrainCameras(frame_index=0).copy()
+        else:
             viewpoint_stack = scene.getTrainCameras().copy()
         viewpoint_cam: Camera = choice(viewpoint_stack)
         dt_xyz, dt_scaling, dt_rotation = trans(viewpoint_cam.time)
