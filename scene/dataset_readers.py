@@ -23,7 +23,6 @@ from plyfile import PlyData, PlyElement
 from utils.sh_utils import SH2RGB
 from scene.gaussian_model import BasicPointCloud
 from utils.time_utils import TimeSeriesInfo
-import io
 
 
 class CameraInfo(NamedTuple):
@@ -101,7 +100,7 @@ def getNerfppNorm(cam_info):
     return {"translate": translate, "radius": radius}
 
 
-import multiprocessing
+from multiprocessing import Pool
 from itertools import repeat
 
 def _process_colmap_camera(key, cam_extrinsics, cam_intrinsics, images_folder, time_step):
@@ -133,28 +132,21 @@ def _process_colmap_camera(key, cam_extrinsics, cam_intrinsics, images_folder, t
 
     image_path = os.path.join(images_folder, extr.name)
     image_name = os.path.basename(image_path).split(".")[0]
-    # 打开图像，读取内容并立即关闭文件
-    with open(image_path, 'rb') as file:
-        img_data = file.read()
-
-    # 使用图像数据创建一个新的Image对象
-    image = Image.open(io.BytesIO(img_data))
 
     if time_step:
-        cam_info = CameraInfo(uid=uid, R=R, T=T, FovY=FovY, FovX=FovX, image=image,
+        cam_info = CameraInfo(uid=uid, R=R, T=T, FovY=FovY, FovX=FovX, image=None,
                               image_path=image_path, image_name=image_name, width=width, height=height,
                               time=time_step * extr.frame_id)
     else:
-        cam_info = CameraInfo(uid=uid, R=R, T=T, FovY=FovY, FovX=FovX, image=image,
+        cam_info = CameraInfo(uid=uid, R=R, T=T, FovY=FovY, FovX=FovX, image=None,
                               image_path=image_path, image_name=image_name, width=width, height=height, time=0)
     return cam_info
-
 
 def readColmapCameras(cam_extrinsics, cam_intrinsics, images_folder, time_step=None):
     cam_infos = []
 
     # 创建进程池
-    with multiprocessing.Pool() as pool:
+    with Pool() as pool:
         # 使用pool.starmap并行处理
         results = pool.starmap(_process_colmap_camera,
                                zip(cam_extrinsics.keys(), repeat(cam_extrinsics), repeat(cam_intrinsics),
