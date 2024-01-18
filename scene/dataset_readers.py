@@ -14,7 +14,7 @@ import sys
 from PIL import Image
 from typing import NamedTuple, List, Dict
 from scene.colmap_loader import read_extrinsics_text, read_intrinsics_text, qvec2rotmat, \
-    read_extrinsics_binary, read_intrinsics_binary, read_points3D_binary, read_points3D_text, Image
+    read_extrinsics_binary, read_intrinsics_binary, read_points3D_binary, read_points3D_text, TimedImage
 from utils.graphics_utils import getWorld2View2, focal2fov, fov2focal
 import numpy as np
 import json
