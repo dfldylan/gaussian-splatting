@@ -211,7 +211,7 @@ def readFixedColmapInfo(path, eval, llffhold=8, time_step=1 / 30, timestep_x=1):
     for folder in numeric_directories:
         if int(folder) == 0:
             for idx, key in enumerate(cam_images):
-                image_raw = cam_views[key]
+                image_raw = cam_images[key]
                 images[image_id] = TimedImage(id=image_id, qvec=image_raw.qvec, tvec=image_raw.tvec,
                                               camera_id=image_raw.camera_id, name=os.path.join(folder, image_raw.name),
                                               xys=image_raw.xys, point3D_ids=image_raw.point3D_ids, frame_id=0)

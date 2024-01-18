@@ -19,6 +19,7 @@ Camera = collections.namedtuple(
     "Camera", ["id", "model", "width", "height", "params"])
 BaseImage = collections.namedtuple(
     "Image", ["id", "qvec", "tvec", "camera_id", "name", "xys", "point3D_ids"])
+TimedImage = collections.namedtuple('TimedImage', BaseImage._fields + ('frame_id',))
 Point3D = collections.namedtuple(
     "Point3D", ["id", "xyz", "rgb", "error", "image_ids", "point2D_idxs"])
 CAMERA_MODELS = {
@@ -71,9 +72,6 @@ class Image(BaseImage):
     def qvec2rotmat(self):
         return qvec2rotmat(self.qvec)
 
-
-class TimedImage(Image):
-    frame_id: int
 
 
 def read_next_bytes(fid, num_bytes, format_char_sequence, endian_character="<"):
