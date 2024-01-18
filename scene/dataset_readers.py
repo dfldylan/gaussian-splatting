@@ -23,7 +23,7 @@ from plyfile import PlyData, PlyElement
 from utils.sh_utils import SH2RGB
 from scene.gaussian_model import BasicPointCloud
 from utils.time_utils import TimeSeriesInfo
-from scene.colmap_loader import TimedImage
+import io
 
 
 class CameraInfo(NamedTuple):
@@ -101,47 +101,66 @@ def getNerfppNorm(cam_info):
     return {"translate": translate, "radius": radius}
 
 
+import multiprocessing
+from itertools import repeat
+
+def _process_colmap_camera(key, cam_extrinsics, cam_intrinsics, images_folder, time_step):
+    sys.stdout.write('\r')
+    # the exact output you're looking for:
+    sys.stdout.write("Reading camera {}/{}".format(key + 1, len(cam_extrinsics)))
+    sys.stdout.flush()
+
+    extr = cam_extrinsics[key]
+    intr = cam_intrinsics[extr.camera_id]
+    height = intr.height
+    width = intr.width
+
+    uid = intr.id
+    R = np.transpose(qvec2rotmat(extr.qvec))
+    T = np.array(extr.tvec)
+
+    if intr.model == "SIMPLE_PINHOLE":
+        focal_length_x = intr.params[0]
+        FovY = focal2fov(focal_length_x, height)
+        FovX = focal2fov(focal_length_x, width)
+    elif intr.model == "PINHOLE":
+        focal_length_x = intr.params[0]
+        focal_length_y = intr.params[1]
+        FovY = focal2fov(focal_length_y, height)
+        FovX = focal2fov(focal_length_x, width)
+    else:
+        assert False, "Colmap camera model not handled: only undistorted datasets (PINHOLE or SIMPLE_PINHOLE cameras) supported!"
+
+    image_path = os.path.join(images_folder, extr.name)
+    image_name = os.path.basename(image_path).split(".")[0]
+    # 打开图像，读取内容并立即关闭文件
+    with open(image_path, 'rb') as file:
+        img_data = file.read()
+
+    # 使用图像数据创建一个新的Image对象
+    image = Image.open(io.BytesIO(img_data))
+
+    if time_step:
+        cam_info = CameraInfo(uid=uid, R=R, T=T, FovY=FovY, FovX=FovX, image=image,
+                              image_path=image_path, image_name=image_name, width=width, height=height,
+                              time=time_step * extr.frame_id)
+    else:
+        cam_info = CameraInfo(uid=uid, R=R, T=T, FovY=FovY, FovX=FovX, image=image,
+                              image_path=image_path, image_name=image_name, width=width, height=height, time=0)
+    return cam_info
+
+
 def readColmapCameras(cam_extrinsics, cam_intrinsics, images_folder, time_step=None):
     cam_infos = []
-    for idx, key in enumerate(cam_extrinsics):
-        sys.stdout.write('\r')
-        # the exact output you're looking for:
-        sys.stdout.write("Reading camera {}/{}".format(idx + 1, len(cam_extrinsics)))
-        sys.stdout.flush()
 
-        extr = cam_extrinsics[key]
-        intr = cam_intrinsics[extr.camera_id]
-        height = intr.height
-        width = intr.width
+    # 创建进程池
+    with multiprocessing.Pool() as pool:
+        # 使用pool.starmap并行处理
+        results = pool.starmap(_process_colmap_camera,
+                               zip(cam_extrinsics.keys(), repeat(cam_extrinsics), repeat(cam_intrinsics),
+                                   repeat(images_folder), repeat(time_step)))
+        cam_infos.extend(results)
 
-        uid = intr.id
-        R = np.transpose(qvec2rotmat(extr.qvec))
-        T = np.array(extr.tvec)
-
-        if intr.model == "SIMPLE_PINHOLE":
-            focal_length_x = intr.params[0]
-            FovY = focal2fov(focal_length_x, height)
-            FovX = focal2fov(focal_length_x, width)
-        elif intr.model == "PINHOLE":
-            focal_length_x = intr.params[0]
-            focal_length_y = intr.params[1]
-            FovY = focal2fov(focal_length_y, height)
-            FovX = focal2fov(focal_length_x, width)
-        else:
-            assert False, "Colmap camera model not handled: only undistorted datasets (PINHOLE or SIMPLE_PINHOLE cameras) supported!"
-
-        image_path = os.path.join(images_folder, os.path.basename(extr.name))
-        image_name = os.path.basename(image_path).split(".")[0]
-        image = Image.open(image_path)
-
-        if time_step:
-            cam_info = CameraInfo(uid=uid, R=R, T=T, FovY=FovY, FovX=FovX, image=image,
-                                  image_path=image_path, image_name=image_name, width=width, height=height,
-                                  time=time_step * extr.frame_id)
-        else:
-            cam_info = CameraInfo(uid=uid, R=R, T=T, FovY=FovY, FovX=FovX, image=image,
-                                  image_path=image_path, image_name=image_name, width=width, height=height, time=0)
-        cam_infos.append(cam_info)
     sys.stdout.write('\n')
     return cam_infos
 
