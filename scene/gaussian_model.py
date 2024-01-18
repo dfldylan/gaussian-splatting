@@ -34,9 +34,6 @@ class GaussianFrame:
         def modified_sigmoid(x):
             return 0.01 * (torch.sigmoid(x) + 1)
 
-        # 然后在你的类中使用这个函数
-        self.scaling_activation = modified_sigmoid
-
         def modified_sigmoid_inverse(y):
             # 首先，将 y 从 [0.01, 0.02] 转换回 [0, 1]
             original_sigmoid_output = (y / 0.01) - 1
@@ -44,8 +41,14 @@ class GaussianFrame:
             # 使用 torch.logit 应用逆 sigmoid 变换
             return torch.logit(original_sigmoid_output)
 
-        # 在类中使用
-        self.scaling_inverse_activation = modified_sigmoid_inverse
+        if self.use_sigmoid_scaling_activation:
+            # 然后在你的类中使用这个函数
+            self.scaling_activation = modified_sigmoid
+            # 在类中使用
+            self.scaling_inverse_activation = modified_sigmoid_inverse
+        else:
+            self.scaling_activation = torch.exp
+            self.scaling_inverse_activation = torch.log
 
         self.covariance_activation = build_covariance_from_scaling_rotation
 
@@ -57,7 +60,7 @@ class GaussianFrame:
         self.rotation_activation = torch.nn.functional.normalize
 
     def __init__(self, active_sh_degree, max_sh_degree, _xyz, _vel, _features_dc, _features_rest, _scaling, _rotation,
-                 _opacity, _cfd):
+                 _opacity, _cfd, use_sigmoid_scaling_activation=False):
         self._xyz = _xyz
         self._vel = _vel
         self._features_dc = _features_dc
@@ -70,6 +73,7 @@ class GaussianFrame:
         self.active_sh_degree = active_sh_degree
         self.max_sh_degree = max_sh_degree
 
+        self.use_sigmoid_scaling_activation = use_sigmoid_scaling_activation
         self.setup_functions()
 
     @property
