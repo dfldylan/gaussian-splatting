@@ -62,6 +62,9 @@ class ModelParams(ParamGroup):
         self.base_frame = 0
         self.hidden_sizes = [128, 64, 32, 16]
         self.track_channel = 128
+
+        self.static_init = False
+
         super().__init__(parser, "Loading Parameters", sentinel)
 
     def extract(self, args):
