@@ -386,7 +386,8 @@ class GaussianModel(GaussianFrame):
         self.denom = self.denom[valid_points_mask]
         self.max_radii2D = self.max_radii2D[valid_points_mask]
 
-        trans.prune_points(valid_points_mask=valid_points_mask)
+        if trans is not None:
+            trans.prune_points(valid_points_mask=valid_points_mask)
 
     def cat_tensors_to_optimizer(self, tensors_dict):
         optimizable_tensors = {}
