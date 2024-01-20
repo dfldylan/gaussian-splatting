@@ -109,6 +109,10 @@ class GaussianFrame:
         features_rest = self._features_rest
         return torch.cat((features_dc, features_rest), dim=1)
 
+    @property
+    def get_num(self):
+        return self._xyz.shape[0]
+
     def construct_list_of_attributes(self):
         l = ['x', 'y', 'z', 'nx', 'ny', 'nz', 'vx', 'vy', 'vz']
         # All channels except the 3 DC
