@@ -27,7 +27,7 @@ import numpy as np
 def trans_sets(dataset: ModelParams, opt, checkpoint, time_info: TimeSeriesInfo = None):
     with torch.no_grad():
         gaussians = GaussianModel(dataset.sh_degree)
-        scene = Scene(dataset, gaussians)
+        scene = Scene(dataset)
         trans = TransModel(dataset, scene.time_info, gaussians._xyz.shape[0])
         if checkpoint:
             (model_params, trans_params, first_iter) = torch.load(checkpoint)
