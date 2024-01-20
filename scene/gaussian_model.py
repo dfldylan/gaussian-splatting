@@ -511,6 +511,10 @@ class GaussianModel(GaussianFrame):
                                                              keepdim=True)
         self.denom[update_filter] += 1
 
+    def move_0(self) -> GaussianFrame:
+        return GaussianFrame(self.active_sh_degree, self.max_sh_degree, self._xyz, self._vel, self._features_dc,
+                             self._features_rest, self._scaling, self._rotation, self._opacity, self._cfd)
+
     def move(self, dt_xyz, dt_scaling, dt_rotation) -> GaussianFrame:
         return GaussianFrame(self.active_sh_degree, self.max_sh_degree, self._xyz + dt_xyz, self._vel,
                              self._features_dc, self._features_rest, self._scaling + dt_scaling,
@@ -520,3 +524,7 @@ class GaussianModel(GaussianFrame):
         return GaussianFrame(self.active_sh_degree, self.max_sh_degree, self._xyz.clone().detach() + dt_xyz, self._vel,
                              self._features_dc, self._features_rest, self._scaling.clone().detach() + dt_scaling,
                              self._rotation.clone().detach() + dt_rotation, self._opacity, self._cfd)
+
+    @property
+    def is_available(self):
+        return False if self.get_num == 0 else True
