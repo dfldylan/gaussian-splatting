@@ -76,6 +76,17 @@ class GaussianFrame:
         self.use_sigmoid_scaling_activation = use_sigmoid_scaling_activation
         self.setup_functions()
 
+    def add_static_gaussians(self, other):
+        other: GaussianFrame
+        self._xyz = torch.concat((self._xyz, other._xyz), dim=0)
+        self._vel = torch.concat((self._vel, other._vel), dim=0)
+        self._features_dc = torch.concat((self._features_dc, other._features_dc), dim=0)
+        self._features_rest = torch.concat((self._features_rest, other._features_rest), dim=0)
+        self._scaling = torch.concat((self._scaling, other._scaling), dim=0)
+        self._rotation = torch.concat((self._rotation, other._rotation), dim=0)
+        self._opacity = torch.concat((self._opacity, other._opacity), dim=0)
+        self._cfd = torch.concat((self._cfd, other._cfd), dim=0)
+
     @property
     def get_xyz(self):
         return self._xyz
@@ -512,9 +523,13 @@ class GaussianModel(GaussianFrame):
 
         torch.cuda.empty_cache()
 
-    def add_densification_stats(self, viewspace_point_tensor, update_filter):
-        self.xyz_gradient_accum[update_filter] += torch.norm(viewspace_point_tensor.grad[update_filter, :2], dim=-1,
-                                                             keepdim=True)
+    def add_densification_stats(self, viewspace_point_tensor, update_filter, slice=None):
+        if slice is None:
+            self.xyz_gradient_accum[update_filter] += torch.norm(viewspace_point_tensor.grad[update_filter, :2], dim=-1,
+                                                                 keepdim=True)
+        else:
+            self.xyz_gradient_accum[update_filter] += torch.norm(viewspace_point_tensor.grad[slice][update_filter, :2],
+                                                                 dim=-1, keepdim=True)
         self.denom[update_filter] += 1
 
     def move_0(self) -> GaussianFrame:

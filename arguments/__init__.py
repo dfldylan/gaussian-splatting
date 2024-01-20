@@ -59,7 +59,7 @@ class ModelParams(ParamGroup):
         self.eval = False
         self.timestep_x = 1  # for timestep stride
 
-        self.base_frame = 0
+        self.base_frame = -1
         self.hidden_sizes = [128, 64, 32, 16]
         self.track_channel = 128
 
@@ -81,7 +81,7 @@ class PipelineParams(ParamGroup):
 
 class OptimizationParams(ParamGroup):
     def __init__(self, parser):
-        self.iterations = 30_000_0
+        self.iterations = 60_000_0
         self.position_lr_init = 0.00016
         self.position_lr_final = 0.0000016
         self.position_lr_delay_mult = 0.01
@@ -101,7 +101,8 @@ class OptimizationParams(ParamGroup):
         self.densify_grad_threshold = 0.0002
         self.random_background = False
         self.up_SHdegree_interval = 1000_0
-        self.density_loss_from_iter = 10_000_0
+        self.density_loss_from_iter = 40_000_0
+        self.static_until_iter = 30_000_0
         super().__init__(parser, "Optimization Parameters")
 
 def get_combined_args(parser : ArgumentParser):
