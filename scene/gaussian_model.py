@@ -164,10 +164,11 @@ class GaussianFrame:
 
 class GaussianModel(GaussianFrame):
 
-    def __init__(self, sh_degree: int):
+    def __init__(self, sh_degree: int, use_sigmoid_scaling_activation=False):
         super().__init__(active_sh_degree=0, max_sh_degree=sh_degree, _xyz=torch.empty(0), _vel=torch.empty(0),
                          _features_dc=torch.empty(0), _features_rest=torch.empty(0), _scaling=torch.empty(0),
-                         _rotation=torch.empty(0), _opacity=torch.empty(0), _cfd=torch.empty(0))
+                         _rotation=torch.empty(0), _opacity=torch.empty(0), _cfd=torch.empty(0),
+                         use_sigmoid_scaling_activation=use_sigmoid_scaling_activation)
 
         self.max_radii2D = torch.empty(0)
         self.xyz_gradient_accum = torch.empty(0)
