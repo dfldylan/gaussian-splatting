@@ -5,15 +5,21 @@ from utils.time_utils import TimeSeriesInfo
 
 
 class TransModel:
-    def __init__(self, args: ModelParams, time_info: TimeSeriesInfo, points_num:int):
-        self.base_time = time_info.get_time(args.base_frame)
-        self.feats= nn.Parameter(torch.zeros((points_num,args.track_channel),device='cuda'))
+    def __init__(self, args: ModelParams, time_info: TimeSeriesInfo):
+        if args.base_frame < 0:
+            self.base_time = time_info.start_time + time_info.num_frames * time_info.time_step
+        else:
+            self.base_time = time_info.get_time(args.base_frame)
         self.mlp = MLP(args.track_channel + 1, args.hidden_sizes, 3 + 3 + 4)
+
+    def set_model(self, args, points_num: int):
+        self.feats = nn.Parameter(torch.zeros((points_num, args.track_channel), device='cuda'))
         self.optimizer = torch.optim.Adam([self.feats] + list(self.mlp.parameters()), lr=0.00001)
 
     def __call__(self, time, *args, **kwargs):
         dt_time = time - self.base_time
-        output = self.mlp(torch.concat((self.feats, torch.full(self.feats[:, :1].size(), dt_time, device='cuda')), dim=-1))
+        output = self.mlp(
+            torch.concat((self.feats, torch.full(self.feats[:, :1].size(), dt_time, device='cuda')), dim=-1))
         dt_xyz, dt_scaling, dt_rotation = torch.split(dt_time * output, [3, 3, 4], dim=-1)
         return dt_xyz, dt_scaling, dt_rotation
 
