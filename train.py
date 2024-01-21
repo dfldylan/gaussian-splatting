@@ -84,13 +84,11 @@ def training(dataset, opt, pipe, testing_iterations, checkpoint_iterations, chec
             (model0_params, trans_params, first_iter) = torch.load(checkpoint)
         gaussians0.restore(model0_params, opt)
         # trans.restore(trans_params)
-        # gen_random_points('temp.ply', num_pts=10000)
         gaussians.create_from_pcd(scene.point_cloud, scene.cameras_extent)  # todo delete
         trans.set_model(dataset, gaussians.get_num)
     else:
         gaussians0.create_from_pcd(scene.point_cloud, scene.cameras_extent)
-        gen_random_points('temp.ply')
-        gaussians.create_from_pcd(fetchPly('temp.ply'), scene.cameras_extent)
+        gaussians.create_from_pcd(scene.point_cloud, scene.cameras_extent)  # todo delete
         trans.set_model(dataset, gaussians.get_num)
     gaussians0.training_setup(opt)
     gaussians.training_setup(opt)
