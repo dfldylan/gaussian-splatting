@@ -60,6 +60,7 @@ class ModelParams(ParamGroup):
         self.timestep_x = 1  # for timestep stride
 
         self.base_frame = -1
+        self.start_frame = 2515
         self.hidden_sizes = [128, 64, 32, 16]
         self.track_channel = 128
 

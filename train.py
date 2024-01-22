@@ -8,7 +8,7 @@
 #
 # For inquiries contact  george.drettakis@inria.fr
 #
-
+import copy
 import os
 import torch
 from random import choice
@@ -33,39 +33,74 @@ try:
 except ImportError:
     TENSORBOARD_FOUND = False
 
+import numpy as np
+import open3d as o3d
 
-def build_gausframe(gaussians0, gaussians, trans, time):
+
+def crop_main(points, eps=0.05):
+    # 假设points是一个Numpy数组，形状为[:,3]
+    # 将Numpy数组转换为Open3D的点云格式
+    pcd = o3d.geometry.PointCloud(o3d.utility.Vector3dVector(points))
+
+    # 使用DBSCAN聚类
+    labels = np.array(pcd.cluster_dbscan(eps=eps, min_points=10, print_progress=True))
+
+    # 获取最大聚类
+    unique_labels, counts = np.unique(labels[labels != -1], return_counts=True)
+    largest_cluster_label = unique_labels[counts.argmax()]
+    mask = labels == largest_cluster_label
+    return mask
+
+
+def build_gausframe(gaussians=None, trans=None, time=None, gaussians0=None, crop=False, crop_eps=0.05):
     gaussians0: GaussianModel
     gaussians: GaussianModel
-    gausframe = gaussians0.move_0()
-    if gaussians.is_available:
-        dt_xyz, dt_scaling, dt_rotation = trans(time)
-        gausframe.add_static_gaussians(gaussians.move(dt_xyz, dt_scaling, dt_rotation))
+    if gaussians is not None and gaussians.is_available:
+        if crop is True:
+            mask = crop_main(points=gaussians.get_xyz.cpu().detach().numpy(), eps=crop_eps)
+            _gaussian = copy.deepcopy(gaussians)
+            _trans = copy.deepcopy(trans)
+            _gaussian.prune_points(torch.tensor(~mask), _trans)
+        else:
+            _trans = trans
+            _gaussian = gaussians
+        dt_xyz, dt_scaling, dt_rotation = _trans(time)
+        gausframe = _gaussian.move(dt_xyz, dt_scaling, dt_rotation)
+        if gaussians0 is not None:
+            gausframe.add_static_gaussians(gaussians0.move_0())
+    elif gaussians0 is not None:
+        gausframe = gaussians0.move_0()
     return gausframe
 
 
-def handle_network(pipe, gaussians0, gaussians, trans, time_info, background, iter_finished, msg):
+def handle_network(pipe, gaussians0, gaussians, trans, time_info, background, iter_finished, lp: ModelParams):
     if network_gui.conn == None:
         network_gui.try_connect()
     while network_gui.conn != None:
         try:
             net_image_bytes = None
             custom_cam: MiniCam
-            custom_cam, do_training, pipe.convert_SHs_python, pipe.compute_cov3D_python, keep_alive, scaling_modifer, frame = network_gui.receive()
+            custom_cam, do_training, pipe.convert_SHs_python, pipe.compute_cov3D_python, keep_alive, scaling_modifer, frame, checkbox_1, checkbox_2, slider_float_1 = network_gui.receive()
             if custom_cam != None:
-                gausframe = build_gausframe(gaussians0, gaussians, trans,
-                                            time_info.get_time(frame / 100 * time_info.num_frames))
+                time = time_info.get_time(frame / 100 * (time_info.num_frames - lp.start_frame) + lp.start_frame)
+                if checkbox_1:
+                    if checkbox_2:
+                        gausframe = build_gausframe(gaussians=gaussians, trans=trans, time=time, crop=True,
+                                                    crop_eps=slider_float_1 / 10)
+                    else:
+                        gausframe = build_gausframe(gaussians=gaussians, trans=trans, time=time)
+                elif checkbox_2:
+                    gausframe = build_gausframe(gaussians0=gaussians0)
+                else:
+                    gausframe = build_gausframe(gaussians0=gaussians0, gaussians=gaussians, trans=trans, time=time)
                 net_image = render(custom_cam, gausframe, pipe, background, scaling_modifer)["render"]
                 net_image_bytes = memoryview(
                     (torch.clamp(net_image, min=0, max=1.0) * 255).byte().permute(1, 2, 0).contiguous().cpu().numpy())
-            network_gui.send(net_image_bytes, msg)
+            network_gui.send(net_image_bytes, lp.source_path)
             if do_training and (iter_finished or not keep_alive):
                 break
         except Exception as e:
             network_gui.conn = None
-
-
-from scene.dataset_readers import gen_random_points, fetchPly
 
 
 def training(dataset, opt, pipe, testing_iterations, checkpoint_iterations, checkpoint, debug_from):
@@ -83,9 +118,9 @@ def training(dataset, opt, pipe, testing_iterations, checkpoint_iterations, chec
         except:
             (model0_params, trans_params, first_iter) = torch.load(checkpoint)
         gaussians0.restore(model0_params, opt)
-        # trans.restore(trans_params)
-        gaussians.create_from_pcd(scene.point_cloud, scene.cameras_extent)  # todo delete
-        trans.set_model(dataset, gaussians.get_num)
+        trans.restore(trans_params)
+        # gaussians.create_from_pcd(scene.point_cloud, scene.cameras_extent)  # todo delete
+        # trans.set_model(dataset, gaussians.get_num)
     else:
         gaussians0.create_from_pcd(scene.point_cloud, scene.cameras_extent)
         gaussians.create_from_pcd(scene.point_cloud, scene.cameras_extent)  # todo delete
@@ -104,7 +139,7 @@ def training(dataset, opt, pipe, testing_iterations, checkpoint_iterations, chec
     first_iter += 1
     for iteration in range(first_iter, opt.iterations + 1):
         handle_network(pipe, gaussians0, gaussians, trans, scene.time_info, background,
-                       (iteration < int(opt.iterations)), dataset.source_path)
+                       (iteration < int(opt.iterations)), dataset)
         iter_start.record()
 
         gaussians0.update_learning_rate(iteration)
@@ -125,7 +160,8 @@ def training(dataset, opt, pipe, testing_iterations, checkpoint_iterations, chec
         bg = torch.rand((3), device="cuda") if opt.random_background else background
 
         if fake_iter > 0:
-            viewpoint_stack = scene.getTrainCameras(frame_index=scene.time_info.num_frames-1)
+            frame_id = choice(range(dataset.start_frame, scene.time_info.num_frames))
+            viewpoint_stack = scene.getTrainCameras(frame_index=frame_id)
             viewpoint_cam: Camera = choice(viewpoint_stack)
             dt_xyz, dt_scaling, dt_rotation = trans(viewpoint_cam.time)
             gaussian_frame = gaussians.move(dt_xyz, dt_scaling, dt_rotation)

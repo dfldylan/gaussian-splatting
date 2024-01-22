@@ -76,6 +76,7 @@ def receive():
             do_rot_scale_python = bool(message["rot_scale_python"])
             keep_alive = bool(message["keep_alive"])
             scaling_modifier = message["scaling_modifier"]
+            slider_float_1 = message["slider_float_1"]
             frame = int(message.get('frame', -1))
             world_view_transform = torch.reshape(torch.tensor(message["view_matrix"]), (4, 4)).cuda()
             world_view_transform[:, 1] = -world_view_transform[:, 1]
@@ -83,10 +84,12 @@ def receive():
             full_proj_transform = torch.reshape(torch.tensor(message["view_projection_matrix"]), (4, 4)).cuda()
             full_proj_transform[:, 1] = -full_proj_transform[:, 1]
             custom_cam = MiniCam(width, height, fovy, fovx, znear, zfar, world_view_transform, full_proj_transform)
+            checkbox_1 = bool(message["checkbox_1"])
+            checkbox_2 = bool(message["checkbox_2"])
         except Exception as e:
             print("")
             traceback.print_exc()
             raise e
-        return custom_cam, do_training, do_shs_python, do_rot_scale_python, keep_alive, scaling_modifier, frame
+        return custom_cam, do_training, do_shs_python, do_rot_scale_python, keep_alive, scaling_modifier, frame, checkbox_1, checkbox_2,slider_float_1
     else:
-        return None, None, None, None, None, None, None
+        return None, None, None, None, None, None, None, None, None,None
