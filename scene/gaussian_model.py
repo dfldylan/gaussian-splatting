@@ -233,9 +233,13 @@ class GaussianModel(GaussianFrame):
         self._opacity.requires_grad = False
 
     def average_color(self):
-        self._features_dc = torch.mean(self._features_dc, dim=0, keepdim=True).repeat(self._features_dc.shape[0], 1, 1)
-        self._features_rest = torch.mean(self._features_rest, dim=0, keepdim=True).repeat(self._features_rest.shape[0],
-                                                                                          1, 1)
+        new_features_dc = torch.mean(self._features_dc, dim=0, keepdim=True).repeat(self._features_dc.shape[0], 1, 1)
+        new_features_rest = torch.mean(self._features_rest, dim=0, keepdim=True).repeat(self._features_rest.shape[0], 1,
+                                                                                        1)
+        optimizable_tensors = self.replace_tensor_to_optimizer(new_features_dc, "f_dc")
+        self._features_dc = optimizable_tensors["f_dc"]
+        optimizable_tensors = self.replace_tensor_to_optimizer(new_features_rest, "f_rest")
+        self._features_rest = optimizable_tensors["f_rest"]
 
     def oneupSHdegree(self):
         if self.active_sh_degree < self.max_sh_degree:
