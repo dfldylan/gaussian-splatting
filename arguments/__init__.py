@@ -19,8 +19,9 @@ import numpy as np
 class GroupParams:
     pass
 
+
 class ParamGroup:
-    def __init__(self, parser: ArgumentParser, name : str, fill_none = False):
+    def __init__(self, parser: ArgumentParser, name: str, fill_none=False):
         group = parser.add_argument_group(name)
         for key, value in vars(self).items():
             shorthand = False
@@ -47,6 +48,7 @@ class ParamGroup:
                 setattr(group, arg[0], arg[1])
         return group
 
+
 class ModelParams(ParamGroup):
     def __init__(self, parser, sentinel=False):
         self.sh_degree = 3
@@ -65,6 +67,8 @@ class ModelParams(ParamGroup):
         self.track_channel = 128
 
         self.static_init = False
+        self.dynamics_color = [0.5, 0.59, 0.17]
+        self.target_radius = 1e-2
 
         super().__init__(parser, "Loading Parameters", sentinel)
 
@@ -73,12 +77,14 @@ class ModelParams(ParamGroup):
         g.source_path = os.path.abspath(g.source_path)
         return g
 
+
 class PipelineParams(ParamGroup):
     def __init__(self, parser):
         self.convert_SHs_python = False
         self.compute_cov3D_python = False
         self.debug = False
         super().__init__(parser, "Pipeline Parameters")
+
 
 class OptimizationParams(ParamGroup):
     def __init__(self, parser):
@@ -97,7 +103,7 @@ class OptimizationParams(ParamGroup):
         self.lambda_dssim = 0.2
         self.densification_interval = 100_0
         self.opacity_reset_interval = 3000_0
-        self.densify_from_iter = 500_0
+        self.densify_from_iter = 0
         self.densify_until_iter = 15_000_0
         self.densify_grad_threshold = 0.0002
         self.random_background = False
@@ -106,7 +112,8 @@ class OptimizationParams(ParamGroup):
         self.static_until_iter = 30_000_0
         super().__init__(parser, "Optimization Parameters")
 
-def get_combined_args(parser : ArgumentParser):
+
+def get_combined_args(parser: ArgumentParser):
     cmdlne_string = sys.argv[1:]
     cfgfile_string = "Namespace()"
     args_cmdline = parser.parse_args(cmdlne_string)
@@ -123,7 +130,7 @@ def get_combined_args(parser : ArgumentParser):
     args_cfgfile = eval(cfgfile_string)
 
     merged_dict = vars(args_cfgfile).copy()
-    for k,v in vars(args_cmdline).items():
+    for k, v in vars(args_cmdline).items():
         if v != None:
             merged_dict[k] = v
     return Namespace(**merged_dict)

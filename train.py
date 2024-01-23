@@ -25,6 +25,7 @@ from utils.image_utils import psnr
 from argparse import ArgumentParser, Namespace
 from arguments import ModelParams, PipelineParams, OptimizationParams
 from utils.density import compute_density
+from utils.sh_utils import RGB2SH
 
 try:
     from torch.utils.tensorboard import SummaryWriter
@@ -43,7 +44,7 @@ def crop_main(points, eps=0.05):
     pcd = o3d.geometry.PointCloud(o3d.utility.Vector3dVector(points))
 
     # 使用DBSCAN聚类
-    labels = np.array(pcd.cluster_dbscan(eps=eps, min_points=10, print_progress=True))
+    labels = np.array(pcd.cluster_dbscan(eps=eps, min_points=10, print_progress=False))
 
     # 获取最大聚类
     unique_labels, counts = np.unique(labels[labels != -1], return_counts=True)
@@ -125,6 +126,7 @@ def handle_network(pipe, gaussians0, gaussians, trans, time_info, background, it
 
 def training(dataset, opt, pipe, testing_iterations, checkpoint_iterations, checkpoint, debug_from,
              init_dynamics=False):
+    dataset: ModelParams
     opt: OptimizationParams
     first_iter = 0
     tb_writer = prepare_output_and_logger(dataset)
@@ -142,13 +144,13 @@ def training(dataset, opt, pipe, testing_iterations, checkpoint_iterations, chec
         trans.restore(trans_params)
         if init_dynamics:
             gaussians = GaussianModel(dataset.sh_degree)
-            gaussians.create_from_pcd(scene.point_cloud, scene.cameras_extent)
+            gaussians.create_from_pcd(scene.point_cloud, scene.cameras_extent, init_color=dataset.dynamics_color)
             gaussians.training_setup(opt)
             trans = TransModel(dataset, scene.time_info)
             trans.set_model(dataset, gaussians.get_num)
     else:
         gaussians_0.create_from_pcd(scene.point_cloud, scene.cameras_extent)
-        gaussians.create_from_pcd(scene.point_cloud, scene.cameras_extent)
+        gaussians.create_from_pcd(scene.point_cloud, scene.cameras_extent, init_color=dataset.dynamics_color)
         trans.set_model(dataset, gaussians.get_num)
         gaussians_0.training_setup(opt)
         gaussians.training_setup(opt)
@@ -186,8 +188,10 @@ def training(dataset, opt, pipe, testing_iterations, checkpoint_iterations, chec
         if fake_iter > 0:
             # ensure only feature is require_grad on gaussian_0
             gaussians_0.fixed_pose()
+            gaussians_0.fixed_feature_rest()
 
-            frame_id = choice(range(dataset.start_frame, scene.time_info.num_frames))
+            # frame_id = choice(range(dataset.start_frame, scene.time_info.num_frames))
+            frame_id = scene.time_info.num_frames - 1
             viewpoint_stack = scene.getTrainCameras(frame_index=frame_id)
             viewpoint_cam: Camera = choice(viewpoint_stack)
             dt_xyz, dt_scaling, dt_rotation = trans(viewpoint_cam.time)
@@ -243,18 +247,25 @@ def training(dataset, opt, pipe, testing_iterations, checkpoint_iterations, chec
                                                                              radii[visibility_filter])
                         gaussians.add_densification_stats(viewspace_point_tensor_grad, visibility_filter)
 
+                    if fake_iter % 5000 == 1000:
+                        gaussians.prune_points(
+                            torch.tensor(~crop_main(gaussians.get_xyz.cpu().detach().numpy(), eps=0.07)), trans)
+
                     if fake_iter > opt.densify_from_iter and fake_iter % opt.densification_interval == 0:
                         size_threshold = 20 if fake_iter > opt.opacity_reset_interval else None
                         gaussians.densify_and_prune(opt.densify_grad_threshold, 0.005, scene.cameras_extent,
                                                     size_threshold, trans=trans)
-                        mask = crop_main(gaussians.get_xyz.cpu().detach().numpy(), eps=0.1)
-                        gaussians.prune_points(torch.tensor(~mask), trans)
+                        gaussians.prune_points(~similarity_mask(gaussians._features_dc.squeeze(1),
+                                                                RGB2SH(np.asarray(dataset.dynamics_color)))[0], trans)
+                        mask, fixed_dc = similarity_mask(gaussians_0._features_dc.squeeze(1),
+                                                         RGB2SH(np.asarray(dataset.dynamics_color)), ret_fixed=True)
+                        gaussians_0.set_featrue_dc(mask, fixed_dc)
                         gaussians.split_ellipsoids(trans=trans)
-                        gaussians.average_color()
 
-                    if fake_iter % opt.opacity_reset_interval == 0 or (
-                            dataset.white_background and fake_iter == opt.densify_from_iter):
-                        gaussians.reset_opacity()
+                    # if fake_iter % opt.opacity_reset_interval == 0 or (
+                    #         dataset.white_background and fake_iter == opt.densify_from_iter):
+                    #     # gaussians_0.reset_opacity()
+                    #     gaussians.reset_opacity()
             else:
                 # Densification
                 if iteration < opt.densify_until_iter:
@@ -376,6 +387,7 @@ if __name__ == "__main__":
     parser.add_argument("--quiet", action="store_true")
     parser.add_argument("--checkpoint_iterations", nargs="+", type=int, default=list(range(0, 60_000_0, 100_0)))
     parser.add_argument("--start_checkpoint", type=str, default=None)
+    parser.add_argument('--init_dynamics', action='store_true', default=False)
     args = parser.parse_args(sys.argv[1:])
     args.checkpoint_iterations.append(args.iterations)
 
@@ -388,7 +400,7 @@ if __name__ == "__main__":
     network_gui.init(args.ip, args.port)
     torch.autograd.set_detect_anomaly(args.detect_anomaly)
     training(lp.extract(args), op.extract(args), pp.extract(args), args.test_iterations, args.checkpoint_iterations,
-             args.start_checkpoint, args.debug_from)
+             args.start_checkpoint, args.debug_from, args.init_dynamics)
 
     # All done
     print("\nTraining complete.")
