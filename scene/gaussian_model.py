@@ -226,6 +226,46 @@ class GaussianModel(GaussianFrame):
         self.denom = denom
         self.optimizer.load_state_dict(opt_dict)
 
+    def fixed_pose(self):
+        self._xyz.requires_grad = False
+        self._scaling.requires_grad = False
+        self._rotation.requires_grad = False
+        self._opacity.requires_grad = False
+
+    def split_ellipsoids(self, N=2, trans=None):
+        # 计算目标半径
+        target_radius = torch.min(self.get_scaling, dim=1).values.mean()
+        selected_pts_mask = torch.any(self.get_scaling > 1.8 * target_radius, dim=1)
+        # 检测并分裂
+        stds = self.get_scaling[selected_pts_mask].repeat(N, 1)
+        means = torch.zeros((stds.size(0), 3), device="cuda")
+        samples = torch.normal(mean=means, std=stds)
+        rots = build_rotation(self._rotation[selected_pts_mask]).repeat(N, 1, 1)
+        new_xyz = torch.bmm(rots, samples.unsqueeze(-1)).squeeze(-1) + self.get_xyz[selected_pts_mask].repeat(N, 1)
+        new_vel = self._vel[selected_pts_mask].repeat(N, 1)
+        new_scaling = self.scaling_inverse_activation(
+            target_radius * torch.ones_like(self.get_scaling[selected_pts_mask]).repeat(N, 1))
+        new_rotation = self._rotation[selected_pts_mask].repeat(N, 1)
+        new_features_dc = self._features_dc[selected_pts_mask].repeat(N, 1, 1)
+        new_features_rest = self._features_rest[selected_pts_mask].repeat(N, 1, 1)
+        new_opacity = self._opacity[selected_pts_mask].repeat(N, 1)
+        new_cfd = self._cfd[selected_pts_mask].repeat(N, 1)
+
+        self.densification_postfix(new_xyz, new_vel, new_features_dc, new_features_rest, new_opacity, new_cfd,
+                                   new_scaling, new_rotation)
+
+        trans.densify(selected_pts_mask, N)
+
+        # 删除原始需要分裂的椭球（示例）
+        prune_filter = torch.cat(
+            (selected_pts_mask, torch.zeros(N * selected_pts_mask.sum(), device="cuda", dtype=bool)))
+        self.prune_points(prune_filter, trans)
+
+    def average_color(self):
+        self._features_dc = torch.mean(self._features_dc, dim=0, keepdim=True).repeat(self._features_dc.shape[0], 1, 1)
+        self._features_rest = torch.mean(self._features_rest, dim=0, keepdim=True).repeat(self._features_rest.shape[0],
+                                                                                          1, 1)
+
     def oneupSHdegree(self):
         if self.active_sh_degree < self.max_sh_degree:
             self.active_sh_degree += 1
