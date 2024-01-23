@@ -253,11 +253,15 @@ class GaussianModel(GaussianFrame):
         if self.active_sh_degree < self.max_sh_degree:
             self.active_sh_degree += 1
 
-    def create_from_pcd(self, pcd: BasicPointCloud, spatial_lr_scale: float):
+    def create_from_pcd(self, pcd: BasicPointCloud, spatial_lr_scale: float, init_color=None):
         self.spatial_lr_scale = spatial_lr_scale
         fused_point_cloud = torch.tensor(np.asarray(pcd.points)).float().cuda()
         fused_point_cloud_vel = torch.zeros_like(fused_point_cloud, device="cuda")
-        fused_color = RGB2SH(torch.tensor(np.asarray(pcd.colors)).float().cuda())
+        if init_color is None:
+            fused_color = RGB2SH(torch.tensor(np.asarray(pcd.colors)).float().cuda())
+        else:
+            fused_color = RGB2SH(torch.tensor(np.asarray(init_color)).float().cuda()).unsqueeze(0).repeat(
+                fused_point_cloud.shape[0], 1)
         features = torch.zeros((fused_color.shape[0], 3, (self.max_sh_degree + 1) ** 2)).float().cuda()
         features[:, :3, 0] = fused_color
         features[:, 3:, 1:] = 0.0
