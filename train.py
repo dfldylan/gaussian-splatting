@@ -52,6 +52,26 @@ def crop_main(points, eps=0.05):
     return mask
 
 
+def similarity_mask(vectors, target, threshold=1, ret_fixed=False):
+    if not isinstance(target, torch.Tensor):
+        # Convert the list to a PyTorch tensor
+        target = torch.tensor(target, dtype=torch.float32).cuda()
+
+    # Calculate the Euclidean distance between each vector and the target
+    bias = (vectors - target)
+    distances = torch.sqrt(torch.sum(bias ** 2, axis=1))
+
+    # Create a mask where distances are less than or equal to the threshold
+    mask = distances <= threshold
+
+    if ret_fixed:
+        normal = bias / distances.unsqueeze(-1)
+        fixed = threshold * normal + target
+        return mask, fixed
+
+    return mask, None
+
+
 def build_gausframe(gaussians=None, trans=None, time=None, gaussians0=None, crop=False, crop_eps=0.05):
     gaussians0: GaussianModel
     gaussians: GaussianModel
