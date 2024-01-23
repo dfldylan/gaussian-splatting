@@ -103,15 +103,14 @@ def handle_network(pipe, gaussians0, gaussians, trans, time_info, background, it
             network_gui.conn = None
 
 
-def training(dataset, opt, pipe, testing_iterations, checkpoint_iterations, checkpoint, debug_from):
+def training(dataset, opt, pipe, testing_iterations, checkpoint_iterations, checkpoint, debug_from,
+             init_dynamics=False):
     opt: OptimizationParams
     first_iter = 0
     tb_writer = prepare_output_and_logger(dataset)
     scene = Scene(dataset)
     gaussians_0 = GaussianModel(dataset.sh_degree)
     gaussians = GaussianModel(dataset.sh_degree)
-    gaussians_0.training_setup(opt)
-    gaussians.training_setup(opt)
     trans = TransModel(dataset, scene.time_info)
     if checkpoint:
         try:
@@ -121,10 +120,18 @@ def training(dataset, opt, pipe, testing_iterations, checkpoint_iterations, chec
             (model0_params, trans_params, first_iter) = torch.load(checkpoint)
         gaussians_0.restore(model0_params, opt)
         trans.restore(trans_params)
+        if init_dynamics:
+            gaussians = GaussianModel(dataset.sh_degree)
+            gaussians.create_from_pcd(scene.point_cloud, scene.cameras_extent)
+            gaussians.training_setup(opt)
+            trans = TransModel(dataset, scene.time_info)
+            trans.set_model(dataset, gaussians.get_num)
     else:
         gaussians_0.create_from_pcd(scene.point_cloud, scene.cameras_extent)
         gaussians.create_from_pcd(scene.point_cloud, scene.cameras_extent)
         trans.set_model(dataset, gaussians.get_num)
+        gaussians_0.training_setup(opt)
+        gaussians.training_setup(opt)
     bg_color = [1, 1, 1] if dataset.white_background else [0, 0, 0]
     background = torch.tensor(bg_color, dtype=torch.float32, device="cuda")
 
