@@ -487,9 +487,9 @@ class GaussianModel(GaussianFrame):
         self.denom = torch.zeros((self.get_xyz.shape[0], 1), device="cuda")
         self.max_radii2D = torch.zeros((self.get_xyz.shape[0]), device="cuda")
 
-    def split_ellipsoids(self, N=2, trans=None):
+    def split_ellipsoids(self, N=2, trans=None, target_radius=None):
         # 计算目标半径
-        target_radius = torch.min(self.get_scaling, dim=1).values.mean()
+        target_radius = torch.min(self.get_scaling, dim=1).values.mean() if target_radius is None else target_radius
         selected_pts_mask = torch.any(self.get_scaling > 1.8 * target_radius, dim=1)
         # 检测并分裂
         stds = self.get_scaling[selected_pts_mask].repeat(N, 1)
