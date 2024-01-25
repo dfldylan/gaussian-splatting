@@ -76,7 +76,7 @@ class GaussianFrame:
         self.use_sigmoid_scaling_activation = use_sigmoid_scaling_activation
         self.setup_functions()
 
-    def add_static_gaussians(self, other):
+    def add_extra_gaussians(self, other):
         other: GaussianFrame
         self._xyz = torch.concat((self._xyz, other._xyz), dim=0)
         self._vel = torch.concat((self._vel, other._vel), dim=0)
