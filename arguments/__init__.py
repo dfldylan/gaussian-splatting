@@ -63,8 +63,8 @@ class ModelParams(ParamGroup):
 
         self.base_frame = -1
         self.start_frame = 2515
-        self.hidden_sizes = [128, 64, 32, 16]
-        self.track_channel = 128
+        self.hidden_sizes = [256, 256, 256, 256]
+        self.track_channel = 64
 
         self.static_init = False
         self.dynamics_color = [0.5, 0.59, 0.17]
@@ -110,6 +110,9 @@ class OptimizationParams(ParamGroup):
         self.up_SHdegree_interval = 1000_0
         self.density_loss_from_iter = 40_000_0
         self.static_until_iter = 30_000_0
+
+        self.track_feat_lr = 0.001
+        self.track_mlp_lr = 0.0001
         super().__init__(parser, "Optimization Parameters")
 
 
