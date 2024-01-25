@@ -232,6 +232,9 @@ class GaussianModel(GaussianFrame):
         self._rotation.requires_grad = False
         self._opacity.requires_grad = False
 
+    def fixed_xyz(self):
+        self._xyz.requires_grad = False
+
     def fixed_feature_rest(self):
         self._features_rest.requires_grad = False
 
@@ -239,6 +242,11 @@ class GaussianModel(GaussianFrame):
         new_features_dc = torch.where(mask.unsqueeze(-1), new_dc, self._features_dc.squeeze(1)).unsqueeze(1)
         optimizable_tensors = self.replace_tensor_to_optimizer(new_features_dc, "f_dc")
         self._features_dc = optimizable_tensors["f_dc"]
+
+    def reset_feature_rest(self):
+        new_features_rest = torch.zeros_like(self._features_rest)
+        optimizable_tensors = self.replace_tensor_to_optimizer(new_features_rest, "f_rest")
+        self._features_rest = optimizable_tensors["f_rest"]
 
     def average_color(self):
         new_features_dc = torch.mean(self._features_dc, dim=0, keepdim=True).repeat(self._features_dc.shape[0], 1, 1)
