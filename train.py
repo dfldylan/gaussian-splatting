@@ -144,12 +144,11 @@ def training(dataset, opt, pipe, testing_iterations, checkpoint_iterations, chec
         try:
             (model0_params, trans_params, first_iter, model_params) = torch.load(checkpoint)
             gaussians.restore(model_params, opt)
-            gaussians.reset_feature_rest()
         except:
             (model0_params, trans_params, first_iter) = torch.load(checkpoint)
         gaussians_0.restore(model0_params, opt)
         try:
-            trans.restore(trans_params,opt,strict=False)
+            trans.restore(trans_params, opt, strict=False)
         except:
             pass
         if init_dynamics:
@@ -172,15 +171,6 @@ def training(dataset, opt, pipe, testing_iterations, checkpoint_iterations, chec
 
     iter_start = torch.cuda.Event(enable_timing=True)
     iter_end = torch.cuda.Event(enable_timing=True)
-
-    def generator(start, end):
-        repeat = 10
-        for virt_start in reversed(range(start, 2660)):
-            virt_repeat = repeat * (2660 - virt_start)
-            for j in range(virt_repeat):
-                yield choice(range(virt_start, end))
-
-    frame_gen = generator(dataset.start_frame, scene.time_info.num_frames)
 
     ema_loss_for_log = 0.0
     progress_bar = tqdm(range(0, opt.iterations), desc="Training progress", initial=first_iter)
@@ -211,16 +201,14 @@ def training(dataset, opt, pipe, testing_iterations, checkpoint_iterations, chec
             # ensure only feature is require_grad on gaussian_0
             gaussians_0.fixed_pose()
             gaussians_0.fixed_feature_rest()
+            gaussians_0.fixed_feature_dc()
             gaussian_frame = gaussians_0.move_0()
             gaussians.fixed_feature_rest()
 
-            # if fake_iter > 10000:
-            #     gaussians.fixed_xyz()
-            #     frame_id = scene.time_info.num_frames -1
-            # else:
-            frame_id = next(frame_gen)
-            if fake_iter % 100 == 0:
-                print('select frame {}'.format(frame_id))
+            if fake_iter > 10000:
+                frame_id = choice(range(dataset.start_frame, scene.time_info.num_frames))
+            else:
+                frame_id = scene.time_info.num_frames - 1
             viewpoint_stack = scene.getTrainCameras(frame_index=frame_id)
             viewpoint_cam: Camera = choice(viewpoint_stack)
             dt_xyz, dt_scaling, dt_rotation = trans(viewpoint_cam.time)
@@ -289,6 +277,11 @@ def training(dataset, opt, pipe, testing_iterations, checkpoint_iterations, chec
                                                          RGB2SH(np.asarray(dataset.dynamics_color)), ret_fixed=True)
                         gaussians_0.set_featrue_dc(mask, fixed_dc)
                         gaussians.split_ellipsoids(trans=trans, target_radius=dataset.target_radius)
+
+                    if fake_iter % 5000 == 0:
+                        gaussians.double_scaling()
+                        gaussians_0.reset_opacity()
+                        gaussians.reset_opacity()
 
                     # if fake_iter % opt.opacity_reset_interval == 0 or (
                     #         dataset.white_background and fake_iter == opt.densify_from_iter):

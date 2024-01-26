@@ -68,7 +68,7 @@ class ModelParams(ParamGroup):
 
         self.static_init = False
         self.dynamics_color = [0.5, 0.59, 0.17]
-        self.target_radius = 1e-2
+        self.target_radius = 0.02
 
         super().__init__(parser, "Loading Parameters", sentinel)
 
