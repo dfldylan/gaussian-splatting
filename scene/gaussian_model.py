@@ -230,13 +230,16 @@ class GaussianModel(GaussianFrame):
         self._xyz.requires_grad = False
         self._scaling.requires_grad = False
         self._rotation.requires_grad = False
-        self._opacity.requires_grad = False
+        # self._opacity.requires_grad = False
 
     def fixed_xyz(self):
         self._xyz.requires_grad = False
 
     def fixed_feature_rest(self):
         self._features_rest.requires_grad = False
+
+    def fixed_feature_dc(self):
+        self._features_dc.requires_grad = False
 
     def set_featrue_dc(self, mask, new_dc):
         new_features_dc = torch.where(mask.unsqueeze(-1), new_dc, self._features_dc.squeeze(1)).unsqueeze(1)
@@ -486,6 +489,11 @@ class GaussianModel(GaussianFrame):
         self.xyz_gradient_accum = torch.zeros((self.get_xyz.shape[0], 1), device="cuda")
         self.denom = torch.zeros((self.get_xyz.shape[0], 1), device="cuda")
         self.max_radii2D = torch.zeros((self.get_xyz.shape[0]), device="cuda")
+
+    def double_scaling(self, multiplier=2):
+        new_scaling = self.scaling_inverse_activation(multiplier * self.get_scaling)
+        optimizable_tensors = self.replace_tensor_to_optimizer(new_scaling, "scaling")
+        self._scaling = optimizable_tensors["scaling"]
 
     def split_ellipsoids(self, N=2, trans=None, target_radius=None):
         # 计算目标半径
