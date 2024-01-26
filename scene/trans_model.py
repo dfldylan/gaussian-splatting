@@ -8,7 +8,7 @@ from utils.position_encoding import get_embedder
 class TransModel:
     def __init__(self, args: ModelParams, time_info: TimeSeriesInfo):
         if args.base_frame < 0:
-            self.base_time = time_info.start_time + time_info.num_frames * time_info.time_step
+            self.base_time = time_info.start_time + (time_info.num_frames - 1) * time_info.time_step
         else:
             self.base_time = time_info.get_time(args.base_frame)
         self.pos_encoder, dims = get_embedder(multires=4, i=1)  # todo out_dim=9?

@@ -109,7 +109,7 @@ def handle_network(pipe, gaussians0, gaussians, trans, time_info, background, it
             custom_cam: MiniCam
             custom_cam, do_training, pipe.convert_SHs_python, pipe.compute_cov3D_python, keep_alive, scaling_modifer, frame, checkbox_1, checkbox_2, slider_float_1 = network_gui.receive()
             if custom_cam != None:
-                time = time_info.get_time(frame / 100 * (time_info.num_frames - lp.start_frame) + lp.start_frame)
+                time = time_info.get_time(frame / 100 * (time_info.num_frames - 1 - lp.start_frame) + lp.start_frame)
                 if checkbox_1:
                     if checkbox_2:
                         gausframe = build_gausframe(gaussians=gaussians, trans=trans, time=time, crop=True,
@@ -187,7 +187,7 @@ def training(dataset, opt, pipe, testing_iterations, checkpoint_iterations, chec
     first_iter += 1
     for iteration in range(first_iter, opt.iterations + 1):
         handle_network(pipe, gaussians_0, gaussians, trans, scene.time_info, background,
-                       (iteration < int(opt.iterations)), dataset)
+                       (iteration <= int(opt.iterations)), dataset)
         iter_start.record()
 
         fake_iter = iteration - opt.static_until_iter
