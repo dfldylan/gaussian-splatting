@@ -241,8 +241,11 @@ class GaussianModel(GaussianFrame):
     def fixed_feature_dc(self):
         self._features_dc.requires_grad = False
 
-    def set_featrue_dc(self, mask, new_dc):
-        new_features_dc = torch.where(mask.unsqueeze(-1), new_dc, self._features_dc.squeeze(1)).unsqueeze(1)
+    def set_featrue_dc(self, new_dc, mask=None):
+        if mask is not None:
+            new_features_dc = torch.where(mask.unsqueeze(-1), new_dc, self._features_dc.squeeze(1)).unsqueeze(1)
+        else:
+            new_features_dc = new_dc
         optimizable_tensors = self.replace_tensor_to_optimizer(new_features_dc, "f_dc")
         self._features_dc = optimizable_tensors["f_dc"]
 
@@ -327,8 +330,13 @@ class GaussianModel(GaussianFrame):
                 param_group['lr'] = lr
                 return lr
 
-    def reset_opacity(self):
-        opacities_new = inverse_sigmoid(torch.min(self.get_opacity, torch.ones_like(self.get_opacity) * 0.01))
+    def reset_opacity(self,value=0.01):
+        opacities_new = inverse_sigmoid(torch.min(self.get_opacity, torch.ones_like(self.get_opacity) * value))
+        optimizable_tensors = self.replace_tensor_to_optimizer(opacities_new, "opacity")
+        self._opacity = optimizable_tensors["opacity"]
+
+    def set_opacity(self,value):
+        opacities_new = inverse_sigmoid(value)
         optimizable_tensors = self.replace_tensor_to_optimizer(opacities_new, "opacity")
         self._opacity = optimizable_tensors["opacity"]
 
@@ -516,7 +524,8 @@ class GaussianModel(GaussianFrame):
         self.densification_postfix(new_xyz, new_vel, new_features_dc, new_features_rest, new_opacity, new_cfd,
                                    new_scaling, new_rotation)
 
-        trans.densify(selected_pts_mask, N)
+        if trans is not None:
+            trans.densify(selected_pts_mask, N)
 
         # 删除原始需要分裂的椭球（示例）
         prune_filter = torch.cat(
@@ -549,7 +558,8 @@ class GaussianModel(GaussianFrame):
         self.densification_postfix(new_xyz, new_vel, new_features_dc, new_features_rest, new_opacity, new_cfd,
                                    new_scaling, new_rotation)
 
-        trans.densify(selected_pts_mask, N)
+        if trans is not None:
+            trans.densify(selected_pts_mask, N)
 
         prune_filter = torch.cat(
             (selected_pts_mask, torch.zeros(N * selected_pts_mask.sum(), device="cuda", dtype=bool)))
@@ -574,7 +584,8 @@ class GaussianModel(GaussianFrame):
         self.densification_postfix(new_xyz, new_vel, new_features_dc, new_features_rest, new_opacities, new_cfd,
                                    new_scaling, new_rotation)
 
-        trans.densify(selected_pts_mask)
+        if trans is not None:
+            trans.densify(selected_pts_mask)
 
     def densify_and_prune(self, max_grad, min_opacity, extent, max_screen_size, trans: TransModel = None):
         grads = self.xyz_gradient_accum / self.denom
@@ -584,8 +595,8 @@ class GaussianModel(GaussianFrame):
         self.densify_and_split(grads, max_grad, extent, trans=trans)
 
         prune_mask = (self.get_opacity < min_opacity).squeeze()
-        sh_mask = torch.all(torch.all(self.get_features < 1e-5, dim=-1), dim=-1)
-        prune_mask = torch.logical_or(prune_mask, sh_mask)
+        # sh_mask = torch.all(torch.all(self.get_features < 1e-5, dim=-1), dim=-1)
+        # prune_mask = torch.logical_or(prune_mask, sh_mask)
         if max_screen_size:
             big_points_vs = self.max_radii2D > max_screen_size
             big_points_ws = self.get_scaling.max(dim=1).values > 0.1 * extent
