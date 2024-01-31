@@ -6,7 +6,7 @@ ENV TZ Asia/Shanghai
 RUN echo 'Acquire::Retries "10";' > /etc/apt/apt.conf.d/80retries
 RUN sed -i 's|http://archive.ubuntu.com/ubuntu|http://mirrors.mit.edu/ubuntu|g' /etc/apt/sources.list \
     && sed -i 's|http://security.ubuntu.com/ubuntu|http://mirrors.mit.edu/ubuntu|g' /etc/apt/sources.list
-RUN apt-get update && apt-get install -y wget git vim openssh-server net-tools
+RUN apt-get update && apt-get install -y wget git vim openssh-server net-tools libgl-dev
 RUN wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh -O /miniconda.sh \
     && bash /miniconda.sh -b -p /miniconda \
     && rm /miniconda.sh
@@ -23,7 +23,7 @@ RUN conda install -n gaussian_splatting -c pytorch -c conda-forge -c defaults \
     torchvision=0.13.1 \
     tensorboard=2.8 \
     tqdm
-RUN pip install nbconvert==7.4.0 jupyterlab
+RUN conda run -n gaussian_splatting pip install nbconvert==7.4.0 jupyterlab open3d==0.16.0 matplotlib
 RUN apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
