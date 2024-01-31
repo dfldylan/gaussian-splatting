@@ -61,14 +61,17 @@ class ModelParams(ParamGroup):
         self.eval = False
         self.timestep_x = 1  # for timestep stride
 
-        self.base_frame = -1
-        self.start_frame = 2515
         self.hidden_sizes = [256, 256, 256, 256]
         self.track_channel = 64
-
-        self.static_init = False
-        self.dynamics_color = [0.5, 0.59, 0.17]
         self.target_radius = 0.02
+        self.base_frame = -1
+        self.start_frame = 2515
+        self.end_frame = 2700
+        self.dynamics_color = [0.5, 0.59, 0.17]
+        self.color_bias = 0.9
+        self.max_radii2D = 20
+        self.eps = 0.05
+        self.first_class = 0
 
         super().__init__(parser, "Loading Parameters", sentinel)
 
@@ -88,11 +91,11 @@ class PipelineParams(ParamGroup):
 
 class OptimizationParams(ParamGroup):
     def __init__(self, parser):
-        self.iterations = 60_000_0
+        self.iterations = 30_0000
         self.position_lr_init = 0.00016
         self.position_lr_final = 0.0000016
         self.position_lr_delay_mult = 0.01
-        self.position_lr_max_steps = 30_000_0
+        self.position_lr_max_steps = 3_0000
         self.velocity_lr_init = 0.00008
         self.feature_lr = 0.0025
         self.opacity_lr = 0.05
@@ -101,16 +104,9 @@ class OptimizationParams(ParamGroup):
         self.rotation_lr = 0.001
         self.percent_dense = 0.01
         self.lambda_dssim = 0.2
-        self.densification_interval = 100_0
-        self.opacity_reset_interval = 3000_0
-        self.densify_from_iter = 0
-        self.densify_until_iter = 15_000_0
         self.densify_grad_threshold = 0.0002
         self.random_background = False
-        self.up_SHdegree_interval = 1000_0
-        self.density_loss_from_iter = 40_000_0
-        self.static_until_iter = 30_000_0
-
+        self.up_SHdegree_interval = 1000
         self.track_feat_lr = 0.001
         self.track_mlp_lr = 0.0001
         super().__init__(parser, "Optimization Parameters")

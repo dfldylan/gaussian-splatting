@@ -12,6 +12,9 @@ import copy
 import os
 import torch
 from random import choice
+
+import yaml
+
 from utils.loss_utils import l1_loss, ssim
 from gaussian_renderer import render, network_gui
 import sys
@@ -38,17 +41,17 @@ import numpy as np
 import open3d as o3d
 
 
-def crop_main(points, eps=0.05):
-    # 假设points是一个Numpy数组，形状为[:,3]
-    # 将Numpy数组转换为Open3D的点云格式
+def categorize(points, eps=0.05):
     pcd = o3d.geometry.PointCloud(o3d.utility.Vector3dVector(points))
-
-    # 使用DBSCAN聚类
     labels = np.array(pcd.cluster_dbscan(eps=eps, min_points=10, print_progress=False))
-
-    # 获取最大聚类
     unique_labels, counts = np.unique(labels[labels != -1], return_counts=True)
-    largest_cluster_label = unique_labels[counts.argmax()]
+    order = np.argsort(counts)[::-1]
+    return unique_labels[order], counts[order], labels
+
+
+def crop_main(points, eps=0.05, choose=0):
+    unique_labels, counts, labels = categorize(points, eps=eps)
+    largest_cluster_label = unique_labels[choose]
     mask = labels == largest_cluster_label
     return mask
 
@@ -73,24 +76,15 @@ def similarity_mask(vectors, target, threshold=0.9, ret_fixed=False):
     return mask, None
 
 
-def build_gausframe(gaussians=None, trans=None, time=None, gaussians0=None, crop=False, crop_eps=0.05):
-    gaussians0: GaussianModel
+def build_gausframe(gaussians=None, trans=None, time=None, gaussians_bg=None):
+    gaussians_bg: GaussianModel
     gaussians: GaussianModel
-    if gaussians0 is not None:
-        gausframe_0 = gaussians0.move_0()
+    if gaussians_bg is not None:
+        gausframe_0 = gaussians_bg.move_0()
     if gaussians is not None and gaussians.is_available:
-        if crop is True:
-            mask = crop_main(points=gaussians.get_xyz.cpu().detach().numpy(), eps=crop_eps)
-            _gaussian = copy.deepcopy(gaussians)
-            _trans = copy.deepcopy(trans)
-            _gaussian.prune_points(torch.tensor(~mask), _trans)
-        else:
-            _trans = trans
-            _gaussian = gaussians
-        dt_xyz, dt_scaling, dt_rotation = _trans(time)
-        gausframe = _gaussian.move(dt_xyz, dt_scaling, dt_rotation)
-
-    if gaussians0 is not None:
+        dt_xyz, dt_scaling, dt_rotation = trans(time)
+        gausframe = gaussians.move(dt_xyz, dt_scaling, dt_rotation)
+    if gaussians_bg is not None:
         if gaussians is not None and gaussians.is_available:
             gausframe_0.add_extra_gaussians(gausframe)
         return gausframe_0
@@ -100,26 +94,57 @@ def build_gausframe(gaussians=None, trans=None, time=None, gaussians0=None, crop
         return None
 
 
-def handle_network(pipe, gaussians0, gaussians, trans, time_info, background, iter_finished, lp: ModelParams):
+import matplotlib.pyplot as plt
+
+
+def handle_network(pipe, gaussians_bg, gaussians, trans, time_info, background, iter_finished, lp: ModelParams):
     if network_gui.conn == None:
         network_gui.try_connect()
     while network_gui.conn != None:
         try:
             net_image_bytes = None
             custom_cam: MiniCam
-            custom_cam, do_training, pipe.convert_SHs_python, pipe.compute_cov3D_python, keep_alive, scaling_modifer, frame, checkbox_1, checkbox_2, slider_float_1 = network_gui.receive()
+            custom_cam, do_training, pipe.convert_SHs_python, pipe.compute_cov3D_python, keep_alive, scaling_modifer, frame, checkbox_1, checkbox_2, checkbox_3, slider_float_1, slider_float_2 = network_gui.receive()
             if custom_cam != None:
-                time = time_info.get_time(frame / 100 * (time_info.num_frames - 1 - lp.start_frame) + lp.start_frame)
-                if checkbox_1:
-                    if checkbox_2:
-                        gausframe = build_gausframe(gaussians=gaussians, trans=trans, time=time, crop=True,
-                                                    crop_eps=slider_float_1 / 10)
-                    else:
-                        gausframe = build_gausframe(gaussians=gaussians, trans=trans, time=time)
-                elif checkbox_2:
-                    gausframe = build_gausframe(gaussians0=gaussians0)
-                else:
-                    gausframe = build_gausframe(gaussians0=gaussians0, gaussians=gaussians, trans=trans, time=time)
+                time = time_info.get_time(frame / 100 * (lp.end_frame - lp.start_frame) + lp.start_frame)
+                if checkbox_1 is False and checkbox_2 is False:
+                    gausframe = build_gausframe(gaussians_bg=gaussians_bg, gaussians=gaussians, trans=trans, time=time)
+                elif checkbox_1 is False and checkbox_2 is True:
+                    gausframe = build_gausframe(gaussians_bg=gaussians_bg)
+                elif checkbox_1 is True and checkbox_2 is False:
+                    gausframe = build_gausframe(gaussians=gaussians, trans=trans, time=time)
+                elif checkbox_1 is True and checkbox_2 is True:
+                    _gaussians = copy.deepcopy(gaussians)
+                    _trans = copy.deepcopy(trans)
+                    if checkbox_3 is False:  # color
+                        mask = \
+                            similarity_mask(_gaussians._features_dc.squeeze(1), RGB2SH(np.asarray(lp.dynamics_color)),
+                                            threshold=slider_float_1)[0]
+                        _gaussians.prune_points(~mask, trans=_trans)
+                        gausframe = build_gausframe(gaussians=_gaussians, trans=_trans, time=time)
+                    else:  # crop
+                        points = _gaussians.get_xyz.cpu().detach().numpy()
+                        unique_labels, counts, labels = categorize(points, eps=slider_float_1 / 10)
+                        # 使用 Matplotlib 的颜色映射
+                        cmap = plt.get_cmap("tab10")  # 您可以选择 'viridis', 'plasma', 'inferno', 'magma', 'tab10', 'Set1' 等
+                        colors = [cmap(i) for i in range(10)]
+                        dc = np.zeros_like(points)
+                        opacity = np.full(labels.shape, 0.05)  # 初始化所有点的不透明度为0.05
+                        select_crop = None if abs(slider_float_2 - 1) < 1e-5 else int(10 * slider_float_2)
+                        if select_crop is None:
+                            color_map = {unique_labels[i]: colors[i] for i in range(10)}
+                        else:
+                            color_map = {unique_labels[select_crop]: colors[select_crop]}
+                        for label, color in color_map.items():
+                            mask = labels == label
+                            dc[mask] = color[:3]  # 分配颜色
+                            opacity[mask] = 0.8  # 分配不透明度
+                        dc = RGB2SH(dc)
+
+                        _gaussians.set_opacity(value=torch.tensor(opacity, dtype=torch.float, device="cuda"))
+                        _gaussians.set_featrue_dc(
+                            new_dc=torch.tensor(dc, dtype=torch.float, device="cuda").unsqueeze(1))
+                        gausframe = build_gausframe(gaussians=_gaussians, trans=_trans, time=time)
                 net_image = render(custom_cam, gausframe, pipe, background, scaling_modifer)["render"]
                 net_image_bytes = memoryview(
                     (torch.clamp(net_image, min=0, max=1.0) * 255).byte().permute(1, 2, 0).contiguous().cpu().numpy())
@@ -130,12 +155,28 @@ def handle_network(pipe, gaussians0, gaussians, trans, time_info, background, it
             network_gui.conn = None
 
 
-def training(dataset, opt, pipe, testing_iterations, checkpoint_iterations, checkpoint, debug_from,
-             init_dynamics=False, init_trans=False):
+def training(dataset, opt, pipe, checkpoint, debug_from, init_dynamics=False, init_trans=False):
     dataset: ModelParams
     opt: OptimizationParams
+
+    with open(os.path.join(dataset.source_path, 'fluid.yml')) as f:
+        conf = yaml.safe_load(f)[args.fluid_setup]
+        dataset.start_frame = conf['start_frame']
+        dataset.end_frame = conf['end_frame']
+        dataset.base_frame = conf['end_frame']
+        dataset.dynamics_color = [item / 256 for item in conf['rgb']]
+        if 'max_radii2D' in conf.keys():
+            dataset.max_radii2D = conf['max_radii2D']
+        if 'bias' in conf.keys():
+            dataset.color_bias = conf['bias']
+        if 'eps' in conf.keys():
+            dataset.eps = conf['eps']
+        if 'class' in conf.keys():
+            dataset.first_class = conf['class']
+        if 'target_radius' in conf.keys():
+            dataset.target_radius = conf['target_radius']
+
     first_iter = 0
-    tb_writer = prepare_output_and_logger(dataset)
     scene = Scene(dataset)
     gaussians_0 = GaussianModel(dataset.sh_degree)
     gaussians = GaussianModel(dataset.sh_degree)
@@ -180,20 +221,12 @@ def training(dataset, opt, pipe, testing_iterations, checkpoint_iterations, chec
                        (iteration <= int(opt.iterations)), dataset)
         iter_start.record()
 
-        fake_iter = iteration - opt.static_until_iter
+        fake_iter = iteration - 3_0000
         if fake_iter < 0:
-            #     gaussians.update_learning_rate(fake_iter)
-            #     if iteration % opt.up_SHdegree_interval == 0:
-            #         gaussians.oneupSHdegree()
-            # else:
             # Every 1000 its we increase the levels of SH up to a maximum degree
             gaussians_0.update_learning_rate(iteration)
             if iteration % opt.up_SHdegree_interval == 0:
                 gaussians_0.oneupSHdegree()
-
-        # # Render
-        # if (iteration - 1) == debug_from:
-        #     pipe.debug = True
 
         bg = torch.rand((3), device="cuda") if opt.random_background else background
 
@@ -205,10 +238,10 @@ def training(dataset, opt, pipe, testing_iterations, checkpoint_iterations, chec
             gaussian_frame = gaussians_0.move_0()
             gaussians.fixed_feature_rest()
 
-            if fake_iter > 10000:
-                frame_id = choice(range(dataset.start_frame, scene.time_info.num_frames))
+            if fake_iter > 1_0000:
+                frame_id = choice(range(dataset.start_frame, dataset.end_frame + 1))
             else:
-                frame_id = scene.time_info.num_frames - 1
+                frame_id = dataset.base_frame
             viewpoint_stack = scene.getTrainCameras(frame_index=frame_id)
             viewpoint_cam: Camera = choice(viewpoint_stack)
             dt_xyz, dt_scaling, dt_rotation = trans(viewpoint_cam.time)
@@ -226,7 +259,7 @@ def training(dataset, opt, pipe, testing_iterations, checkpoint_iterations, chec
         gt_image = viewpoint_cam.original_image.cuda()
         Ll1 = l1_loss(image, gt_image)
         loss = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * (1.0 - ssim(image, gt_image))
-        if iteration > opt.density_loss_from_iter:
+        if fake_iter > 10_0000:
             density = compute_density(gaussian_frame.get_xyz, 0.03)
             density_error = 1e-16 * torch.mean(torch.square(density - torch.mean(density, dim=0, keepdim=True)))
             loss = loss + density_error
@@ -239,21 +272,18 @@ def training(dataset, opt, pipe, testing_iterations, checkpoint_iterations, chec
         with torch.no_grad():
             # Progress bar
             ema_loss_for_log = 0.4 * loss.item() + 0.6 * ema_loss_for_log
-            if iteration % 10_0 == 0:
+            if iteration % 100 == 0:
                 progress_bar.set_postfix({"Loss": f"{ema_loss_for_log:.{7}f}"})
-                progress_bar.update(10_0)
+                progress_bar.update(100)
             if iteration == opt.iterations:
                 progress_bar.close()
                 # # Log and save
                 # training_report(tb_writer, iteration, Ll1, loss, l1_loss, iter_start.elapsed_time(iter_end),
                 #                 testing_iterations, scene, render, trans, (pipe, background), gaussians_0, gaussians)
-            # if (iteration in saving_iterations):
-            #     print("\n[ITER {}] Saving Gaussians".format(iteration))
-            #     scene.save(iteration)
 
             if fake_iter > 0:
                 # Densification
-                if fake_iter < opt.densify_until_iter:
+                if fake_iter < 15_0000:
                     # Keep track of max radii in image-space for pruning
                     visibility_filter = visibility_filter[:gaussians.get_num]
                     radii = radii[:gaussians.get_num]
@@ -263,45 +293,47 @@ def training(dataset, opt, pipe, testing_iterations, checkpoint_iterations, chec
                                                                              radii[visibility_filter])
                         gaussians.add_densification_stats(viewspace_point_tensor_grad, visibility_filter)
 
-                    if fake_iter % 5000 == 1000:
-                        gaussians.prune_points(
-                            torch.tensor(~crop_main(gaussians.get_xyz.cpu().detach().numpy(), eps=0.07)), trans)
+                    if fake_iter == 1000:
+                        gaussians.prune_points(torch.tensor(
+                            ~crop_main(gaussians.get_xyz.cpu().detach().numpy(), eps=dataset.eps,
+                                       choose=dataset.first_class)), trans)
 
-                    if fake_iter > opt.densify_from_iter and fake_iter % opt.densification_interval == 0:
-                        size_threshold = 20 if fake_iter > opt.opacity_reset_interval else None
+                    if fake_iter > 0 and fake_iter % 1000 == 0:
+                        size_threshold = 20 if fake_iter > 3_0000 else None
                         gaussians.densify_and_prune(opt.densify_grad_threshold, 0.005, scene.cameras_extent,
                                                     size_threshold, trans=trans)
                         gaussians.prune_points(~similarity_mask(gaussians._features_dc.squeeze(1),
-                                                                RGB2SH(np.asarray(dataset.dynamics_color)))[0], trans)
+                                                                RGB2SH(np.asarray(dataset.dynamics_color)),
+                                                                threshold=dataset.color_bias)[0], trans)
                         mask, fixed_dc = similarity_mask(gaussians_0._features_dc.squeeze(1),
-                                                         RGB2SH(np.asarray(dataset.dynamics_color)), ret_fixed=True)
-                        gaussians_0.set_featrue_dc(mask, fixed_dc)
+                                                         RGB2SH(np.asarray(dataset.dynamics_color)), ret_fixed=True,
+                                                         threshold=dataset.color_bias)
+                        gaussians_0.set_featrue_dc(fixed_dc, mask)
                         gaussians.split_ellipsoids(trans=trans, target_radius=dataset.target_radius)
-
-                    if fake_iter % 5000 == 0:
-                        gaussians.double_scaling()
                         gaussians_0.reset_opacity()
                         gaussians.reset_opacity()
 
-                    # if fake_iter % opt.opacity_reset_interval == 0 or (
-                    #         dataset.white_background and fake_iter == opt.densify_from_iter):
-                    #     # gaussians_0.reset_opacity()
-                    #     gaussians.reset_opacity()
+                    if fake_iter > 1000 and fake_iter % 5000 == 1000:
+                        gaussians.prune_points(
+                            torch.tensor(~crop_main(gaussians.get_xyz.cpu().detach().numpy(), eps=dataset.eps)), trans)
+
+                    if fake_iter % 5000 == 0:
+                        gaussians.double_scaling()
+
             else:
                 # Densification
-                if iteration < opt.densify_until_iter:
+                if iteration < 15_000:
                     # Keep track of max radii in image-space for pruning
                     gaussians_0.max_radii2D[visibility_filter] = torch.max(gaussians_0.max_radii2D[visibility_filter],
                                                                            radii[visibility_filter])
                     gaussians_0.add_densification_stats(viewspace_point_tensor, visibility_filter)
 
-                    if iteration > opt.densify_from_iter and iteration % opt.densification_interval == 0:
-                        size_threshold = 20 if iteration > opt.opacity_reset_interval else None
+                    if iteration > 500 and iteration % 100 == 0:
+                        size_threshold = None
                         gaussians_0.densify_and_prune(opt.densify_grad_threshold, 0.005, scene.cameras_extent,
                                                       size_threshold)
 
-                    if iteration % opt.opacity_reset_interval == 0 or (
-                            dataset.white_background and iteration == opt.densify_from_iter):
+                    if iteration % 3_000 == 0 or (dataset.white_background and iteration == 500):
                         gaussians_0.reset_opacity()
 
             # Optimizer step
@@ -317,7 +349,7 @@ def training(dataset, opt, pipe, testing_iterations, checkpoint_iterations, chec
                     gaussians_0.optimizer.step()
                     gaussians_0.optimizer.zero_grad(set_to_none=True)
 
-            if (iteration in checkpoint_iterations):
+            if iteration % 1000 == 0:
                 print("\n[ITER {}] Saving Checkpoint".format(iteration))
                 torch.save((gaussians_0.capture(), trans.capture(), iteration, gaussians.capture()),
                            scene.model_path + "/chkpnt" + str(iteration) + ".pth")
@@ -404,14 +436,12 @@ if __name__ == "__main__":
     parser.add_argument('--port', type=int, default=6009)
     parser.add_argument('--debug_from', type=int, default=-1)
     parser.add_argument('--detect_anomaly', action='store_true', default=False)
-    parser.add_argument("--test_iterations", nargs="+", type=int, default=list(range(0, 60_000_0, 500_0)))
     parser.add_argument("--quiet", action="store_true")
-    parser.add_argument("--checkpoint_iterations", nargs="+", type=int, default=list(range(0, 60_000_0, 100_0)))
     parser.add_argument("--start_checkpoint", type=str, default=None)
     parser.add_argument('--init_dynamics', action='store_true', default=False)
     parser.add_argument('--init_trans', action='store_true', default=False)
+    parser.add_argument('--fluid_setup', type=int, default=0)
     args = parser.parse_args(sys.argv[1:])
-    args.checkpoint_iterations.append(args.iterations)
 
     print("Optimizing " + args.model_path)
 
@@ -421,8 +451,8 @@ if __name__ == "__main__":
     # Start GUI server, configure and run training
     network_gui.init(args.ip, args.port)
     torch.autograd.set_detect_anomaly(args.detect_anomaly)
-    training(lp.extract(args), op.extract(args), pp.extract(args), args.test_iterations, args.checkpoint_iterations,
-             args.start_checkpoint, args.debug_from, args.init_dynamics, args.init_trans)
+    training(lp.extract(args), op.extract(args), pp.extract(args), args.start_checkpoint, args.debug_from,
+             args.init_dynamics, args.init_trans)
 
     # All done
     print("\nTraining complete.")
