@@ -27,7 +27,7 @@ class TransModel:
         output = self.mlp(torch.concat(
             (self.feats, self.pos_encoder(torch.full(self.feats[:, :1].size(), dt_time, device='cuda')))
             , dim=-1))
-        dt_xyz, dt_scaling, dt_rotation = torch.split(torch.tanh(torch.tensor(dt_time)) * output, [3, 3, 4], dim=-1)
+        dt_xyz, dt_scaling, dt_rotation = torch.split(dt_time * output, [3, 3, 4], dim=-1)
         return dt_xyz, dt_scaling, dt_rotation
 
     def capture(self):
