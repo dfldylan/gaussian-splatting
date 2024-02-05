@@ -330,12 +330,12 @@ class GaussianModel(GaussianFrame):
                 param_group['lr'] = lr
                 return lr
 
-    def reset_opacity(self,value=0.01):
+    def reset_opacity(self, value=0.01):
         opacities_new = inverse_sigmoid(torch.min(self.get_opacity, torch.ones_like(self.get_opacity) * value))
         optimizable_tensors = self.replace_tensor_to_optimizer(opacities_new, "opacity")
         self._opacity = optimizable_tensors["opacity"]
 
-    def set_opacity(self,value):
+    def set_opacity(self, value):
         opacities_new = inverse_sigmoid(value)
         optimizable_tensors = self.replace_tensor_to_optimizer(opacities_new, "opacity")
         self._opacity = optimizable_tensors["opacity"]
