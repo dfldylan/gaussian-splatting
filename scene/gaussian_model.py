@@ -506,7 +506,7 @@ class GaussianModel(GaussianFrame):
     def split_ellipsoids(self, N=2, trans=None, target_radius=None):
         # 计算目标半径
         threshold = torch.quantile(torch.max(self.get_scaling, dim=1).values,
-                                   0.95) if target_radius is None else 1.8 * target_radius
+                                   0.8) if target_radius is None else 1.8 * target_radius
         selected_pts_mask = torch.any(self.get_scaling > threshold, dim=1)
         # 检测并分裂
         stds = self.get_scaling[selected_pts_mask].repeat(N, 1)
