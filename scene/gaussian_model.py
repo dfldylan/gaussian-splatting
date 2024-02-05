@@ -206,7 +206,7 @@ class GaussianModel(GaussianFrame):
             self.spatial_lr_scale,
         )
 
-    def restore(self, model_args, training_args):
+    def restore(self, model_args, training_args, position_lr_max_steps):
         (self.active_sh_degree,
          self._xyz,
          self._vel,
@@ -221,7 +221,7 @@ class GaussianModel(GaussianFrame):
          denom,
          opt_dict,
          self.spatial_lr_scale) = model_args
-        self.training_setup(training_args)
+        self.training_setup(training_args, position_lr_max_steps)
         self.xyz_gradient_accum = xyz_gradient_accum
         self.denom = denom
         self.optimizer.load_state_dict(opt_dict)
@@ -300,7 +300,7 @@ class GaussianModel(GaussianFrame):
         self._cfd = nn.Parameter(cfd.requires_grad_(True))
         self.max_radii2D = torch.zeros((self.get_xyz.shape[0]), device="cuda")
 
-    def training_setup(self, training_args):
+    def training_setup(self, training_args, position_lr_max_steps):
         self.percent_dense = training_args.percent_dense
         self.xyz_gradient_accum = torch.zeros((self.get_xyz.shape[0], 1), device="cuda")
         self.denom = torch.zeros((self.get_xyz.shape[0], 1), device="cuda")
@@ -320,7 +320,7 @@ class GaussianModel(GaussianFrame):
         self.xyz_scheduler_args = get_expon_lr_func(lr_init=training_args.position_lr_init * self.spatial_lr_scale,
                                                     lr_final=training_args.position_lr_final * self.spatial_lr_scale,
                                                     lr_delay_mult=training_args.position_lr_delay_mult,
-                                                    max_steps=training_args.position_lr_max_steps)
+                                                    max_steps=position_lr_max_steps)
 
     def update_learning_rate(self, iteration):
         ''' Learning rate scheduling per step '''
