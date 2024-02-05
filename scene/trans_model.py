@@ -7,7 +7,7 @@ from utils.position_encoding import get_embedder
 
 class TransModel:
     def __init__(self, args: ModelParams, time_info: TimeSeriesInfo):
-        self.base_time = time_info.get_time(args.base_frame)
+        self.base_time = time_info.get_time(args.end_frame)
         self.pos_encoder, dims = get_embedder(multires=4, i=1)
         self.mlp = MLP(args.track_channel + dims, args.hidden_sizes, 3 + 3 + 4)
 
@@ -38,11 +38,17 @@ class TransModel:
             self.optimizer.state_dict(),
         )
 
-    def restore(self, params, training_args, strict=True):
-        (self.base_time,
-         self.feats,
-         mlp_dict,
-         opt_dict) = params
+    def restore(self, params, training_args, strict=True, reset_time=True):
+        if reset_time:
+            (self.base_time,
+             self.feats,
+             mlp_dict,
+             opt_dict) = params
+        else:
+            (_,
+             self.feats,
+             mlp_dict,
+             opt_dict) = params
         self.mlp.load_state_dict(mlp_dict, strict=strict)
         self.set_optimizer(training_args)
         self.optimizer.load_state_dict(opt_dict)
