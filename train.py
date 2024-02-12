@@ -45,6 +45,7 @@ def training(dataset: ModelParams, opt: OptimizationParams, pipe, checkpoint):
         merge_args(dataset, yaml.safe_load(open(os.path.join(dataset.source_path, 'fluid.yml')))[args.fluid_setup])
 
     first_iter = 0
+    _ = prepare_output_and_logger(dataset)
     scene = Scene(dataset)
     if dataset.end_frame == -1:
         dataset.end_frame = scene.time_info.num_frames - 1
@@ -183,7 +184,7 @@ def training(dataset: ModelParams, opt: OptimizationParams, pipe, checkpoint):
                             if gs_bg is not None:
                                 gs_bg.reset_opacity()
                             if gaussians.get_num < opt.max_num_points:
-                                gaussians.split_ellipsoids(trans=trans,target_radius=dataset.target_radius)
+                                gaussians.split_ellipsoids(trans=trans, target_radius=dataset.target_radius)
                             gaussians.reset_opacity()
 
                         if dynamics_iter == opt.warm_iterations:
@@ -207,14 +208,10 @@ def training(dataset: ModelParams, opt: OptimizationParams, pipe, checkpoint):
                                 gaussians.prune_points(~similarity_mask(gaussians._features_dc.squeeze(1),
                                                                         RGB2SH(np.asarray(dataset.dynamics_color)),
                                                                         threshold=dataset.color_bias)[0], trans)
-                                # mask, fixed_dc = similarity_mask(gs_bg._features_dc.squeeze(1),
-                                #                                  RGB2SH(np.asarray(dataset.dynamics_color)), ret_fixed=True,
-                                #                                  threshold=dataset.color_bias)
-                                # gs_bg.set_featrue_dc(fixed_dc, mask)
                             if gs_bg is not None:
                                 gs_bg.reset_opacity()
-                            if gaussians.get_num < opt.max_num_points:
-                                gaussians.split_ellipsoids(trans=trans,target_radius=dataset.target_radius)
+                            gaussians.split_ellipsoids(trans=trans, target_radius=dataset.target_radius,
+                                                           max_num=1000000)
                             gaussians.reset_opacity()
 
                         if dynamics_iter % 5000 == 0:
