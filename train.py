@@ -156,9 +156,9 @@ def training(dataset: ModelParams, opt: OptimizationParams, pipe, checkpoint):
                 # Densification
                 if dynamics_iter <= (opt.iterations - opt.bg_iterations) / 2:
                     # Keep track of max radii in image-space for pruning
-                    visibility_filter = visibility_filter[:gaussians.get_num]
-                    radii = radii[:gaussians.get_num]
-                    viewspace_point_tensor_grad = viewspace_point_tensor.grad[:gaussians.get_num]
+                    visibility_filter = visibility_filter[-gaussians.get_num:]
+                    radii = radii[-gaussians.get_num:]
+                    viewspace_point_tensor_grad = viewspace_point_tensor.grad[-gaussians.get_num:]
                     if visibility_filter.sum().cpu().numpy() != 0:
                         gaussians.max_radii2D[visibility_filter] = torch.max(gaussians.max_radii2D[visibility_filter],
                                                                              radii[visibility_filter])
