@@ -228,7 +228,7 @@ def training(dataset: ModelParams, opt: OptimizationParams, pipe, checkpoint):
                     # Keep track of max radii in image-space for pruning
                     gs_bg.max_radii2D[visibility_filter] = torch.max(gs_bg.max_radii2D[visibility_filter],
                                                                      radii[visibility_filter])
-                    gs_bg.add_densification_stats(viewspace_point_tensor, visibility_filter)
+                    gs_bg.add_densification_stats(viewspace_point_tensor.grad, visibility_filter)
 
                     if iteration > 500 and iteration % 100 == 0:
                         size_threshold = None
