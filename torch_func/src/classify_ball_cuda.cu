@@ -5,49 +5,26 @@
 __device__ void mutexLock(int *mutex)
 {
     while (atomicCAS(mutex, 0, 1) != 0)
-        ;
+    {
+        __nanosleep(10);
+    }
+}
+
+__device__ bool mutexTryLock(int *mutex)
+{
+    if (atomicCAS(mutex, 0, 1) == 0)
+    {
+        return true;
+    }
+    else
+    {
+        return false;
+    }
 }
 
 __device__ void mutexUnlock(int *mutex)
 {
     atomicExch(mutex, 0);
-}
-
-__device__ int _findLock(int *uf_array, int x, int *ball_lock)
-{
-    int root = x;
-    mutexLock(&ball_lock[root]);
-    while (uf_array[root] != root)
-    {
-        mutexUnlock(&ball_lock[root]);
-        root = uf_array[root];
-        mutexLock(&ball_lock[root]);
-    }
-    // 路径压缩
-    while (uf_array[x] != x)
-    {
-        int tmp = uf_array[x];
-        uf_array[x] = root;
-        x = tmp;
-    }
-    return root;
-}
-
-__device__ int _find(int *uf_array, int x)
-{
-    int root = x;
-    while (uf_array[root] != root)
-    {
-        root = uf_array[root];
-    }
-    // 路径压缩
-    while (uf_array[x] != x)
-    {
-        int tmp = uf_array[x];
-        uf_array[x] = root;
-        x = tmp;
-    }
-    return root;
 }
 
 __device__ void _linkUf(
@@ -56,11 +33,99 @@ __device__ void _linkUf(
     int b, // neighbor
     int *ball_lock)
 {
-    int root_b = _find(uf_array, b);
-    int root_a = _findLock(uf_array, a, ball_lock);
-    uf_array[root_a] = root_b;
-    mutexUnlock(&ball_lock[root_a]);
-    uf_array[a] = root_b;
+    // get and lock root_a and root_b
+    int root_a, root_b, x;
+    bool finish = false;
+    bool failed = false;
+    while (true)
+    {
+        __nanosleep((a % 10) * 10);
+        failed = false;
+        root_a = a;
+        mutexLock(&ball_lock[root_a]);
+        while (uf_array[root_a] != root_a)
+        {
+            mutexUnlock(&ball_lock[root_a]);
+            root_a = uf_array[root_a];
+            if (!mutexTryLock(&ball_lock[root_a]))
+            {
+                failed = true;
+                break;
+            };
+        }
+        if (failed)
+        {
+            continue;
+        }
+        // get and lock root_a success
+        // 路径压缩
+        x = a;
+        while (uf_array[x] != root_a)
+        {
+            int tmp = uf_array[x];
+            uf_array[x] = root_a;
+            //printf("idx %d link %d -> %d\n", a, x, root_a);
+            x = tmp;
+        }
+
+        root_b = b;
+        if (root_a == root_b)
+        {
+            finish = true;
+            mutexUnlock(&ball_lock[root_a]);
+            break;
+        }
+        if (!mutexTryLock(&ball_lock[root_b]))
+        {
+            failed = true;
+            mutexUnlock(&ball_lock[root_a]);
+            continue;
+        }
+        while (uf_array[root_b] != root_b)
+        {
+            mutexUnlock(&ball_lock[root_b]);
+            root_b = uf_array[root_b];
+            if (root_a == root_b)
+            {
+                finish = true;
+                break;
+            }
+            if (!mutexTryLock(&ball_lock[root_b]))
+            {
+                failed = true;
+                break;
+            };
+        }
+        if (finish)
+        {
+            mutexUnlock(&ball_lock[root_a]);
+            break;
+        }
+        if (failed)
+        {
+            mutexUnlock(&ball_lock[root_a]);
+            continue;
+        }
+        // get and lock root_b success
+        // 路径压缩
+        x = b;
+        while (uf_array[x] != root_b)
+        {
+            int tmp = uf_array[x];
+            uf_array[x] = root_b;
+            //printf("idx %d link %d -> %d\n", a, x, root_b);
+            x = tmp;
+        }
+
+        uf_array[a] = root_b;
+        uf_array[root_a] = root_b;
+        //printf("idx %d link %d -> %d\n", a, a, root_b);
+        //printf("idx %d link %d -> %d\n", a, root_a, root_b);
+
+        mutexUnlock(&ball_lock[root_a]);
+        mutexUnlock(&ball_lock[root_b]);
+        break;
+    }
 }
 
 __global__ void initUfArray(
@@ -98,8 +163,9 @@ __global__ void classifyBallUfCUDA(
     float new_cz = new_color[2];
     float cthr2 = color_thr * color_thr;
 
-    for (int k = 0; k < n; ++k)
+    for (int k = idx - 1; k >= 0; --k)
     {
+        // //printf("idx %d start handle %d\n", idx, k);
         float x = center[k * 3 + 0];
         float y = center[k * 3 + 1];
         float z = center[k * 3 + 2];
@@ -117,10 +183,14 @@ __global__ void classifyBallUfCUDA(
             if (cd2 < cthr2)
             {
                 // find one
+                //printf("idx %d find neighbor %d\n", idx, k);
                 _linkUf(uf_array, idx, k, ball_lock);
+                //printf("idx %d linked neighbor %d\n", idx, k);
             }
         }
+        // //printf("idx %d have handled %d\n", idx, k);
     }
+    //printf("idx %d is finished!\n", idx);
 }
 
 __global__ void ufToLabels(
@@ -131,8 +201,13 @@ __global__ void ufToLabels(
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx >= n)
         return;
+    int root = idx;
+    while (uf_array[root] != root)
+    {
+        root = uf_array[root];
+    }
 
-    out_labels[idx] = _find(uf_array, idx);
+    out_labels[idx] = root;
 }
 
 torch::Tensor ClassifyBallCUDA(
@@ -171,6 +246,9 @@ torch::Tensor ClassifyBallCUDA(
         uf_array,
         out_label.contiguous().data_ptr<int>(),
         N);
+
+    // cudaMemcpy(out_label.contiguous().data_ptr<int>(), uf_array, N * sizeof(int), cudaMemcpyDeviceToDevice);
+
     // 在CUDA内核调用后
     cudaFree(uf_array);
     cudaFree(ball_lock);
