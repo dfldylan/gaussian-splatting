@@ -163,9 +163,11 @@ __global__ void classifyBallUfCUDA(
     float new_cz = new_color[2];
     float cthr2 = color_thr * color_thr;
 
-    for (int k = idx - 1; k >= 0; --k)
+    int loop_num = n / 2;
+    for (int i = 0; i < loop_num; ++i)
     {
-        // //printf("idx %d start handle %d\n", idx, k);
+        int k = (idx - 1 - i) % n;
+        // printf("idx %d start handle %d\n", idx, k);
         float x = center[k * 3 + 0];
         float y = center[k * 3 + 1];
         float z = center[k * 3 + 2];
@@ -188,7 +190,7 @@ __global__ void classifyBallUfCUDA(
                 //printf("idx %d linked neighbor %d\n", idx, k);
             }
         }
-        // //printf("idx %d have handled %d\n", idx, k);
+        // printf("idx %d have handled %d\n", idx, k);
     }
     //printf("idx %d is finished!\n", idx);
 }
