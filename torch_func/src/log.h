@@ -12,7 +12,7 @@ enum LogLevel
     LOG_LEVEL_ERROR,   // 错误信息
     LOG_LEVEL_NONE     // 不输出任何日志
 };
-#define CURRENT_LOG_LEVEL LOG_LEVEL_ERROR
+#define CURRENT_LOG_LEVEL LOG_LEVEL_NONE
 
 // 日志宏，只有当当前日志等级小于或等于指定的日志等级时才输出
 #define LOG(level, format, ...)                                 \

@@ -80,7 +80,7 @@ __device__ int _popQueue(Queue *queue, int idx)
     return ret;
 }
 
-__device__ int _findRoot(
+__host__ __device__  int _findRoot(
     int *uf_array,
     int x)
 {

@@ -5,7 +5,7 @@
 #include "queue_cuda.cu"
 #include "sleep.h"
 #define BLOCK_SIZE 256
-
+#define MAX_MATRIX 1000000000
 
 __global__ void initUfArray(
     int *uf_array,
@@ -17,19 +17,17 @@ __global__ void initUfArray(
     uf_array[idx] = idx;
 }
 
-__global__ void classifyBallUfCUDA(
+__global__ void calNeighbor(
     const float *center, // [N, 3]
     const float *radius, // [N]
     const float *color,  // [N, 3]
     const float dis_thr,
     const float color_thr,
-    int n,
-    int *uf_array,
-    Queue _queue,
-    bool *_finishFlags)
+    int N, int batchIndex, int batchSize,
+    bool *neighbor_array)
 {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx >= n)
+    if (idx >= N)
         return;
     // producer
     const float *new_center = center + idx * 3;
@@ -43,8 +41,14 @@ __global__ void classifyBallUfCUDA(
     float new_cz = new_color[2];
     float cthr2 = color_thr * color_thr;
 
-    for (int k = 0; k < idx; ++k)
+    for (int i = 0; i < batchSize; ++i)
     {
+        int index = idx * batchSize + i;
+        neighbor_array[index] = false;
+
+        if (batchIndex * batchSize + i == int(N / 2))
+            break;
+        int k = (idx + batchIndex * batchSize + i + 1) % N;
         float x = center[k * 3 + 0];
         float y = center[k * 3 + 1];
         float z = center[k * 3 + 2];
@@ -62,87 +66,9 @@ __global__ void classifyBallUfCUDA(
             if (cd2 < cthr2)
             {
                 // find one
-                int root_k = _findRoot(uf_array, k);
-                if (uf_array[idx] == idx)
-                {
-                    uf_array[idx] = root_k;
-                    LOG(LOG_LEVEL_INFO, "T%d linked %d to %d which is root of %d", idx, idx, root_k, k);
-                }
-                else if (uf_array[idx] > root_k)
-                {
-                    LOG(LOG_LEVEL_DEBUG, "T%d want to push %d which is root of %d to %d", idx, root_k, k, uf_array[idx]);
-                    _pushQueue(&_queue, uf_array[idx], root_k);
-                    LOG(LOG_LEVEL_INFO, "T%d have push %d which is root of %d to %d", idx, root_k, k, uf_array[idx]);
-                    uf_array[idx] = root_k;
-                    LOG(LOG_LEVEL_INFO, "T%d linked %d to %d which is root of %d", idx, idx, root_k, k);
-                }
-                else if (uf_array[idx] < root_k)
-                {
-                    LOG(LOG_LEVEL_DEBUG, "T%d want to push %d to %d which is root of %d", idx, uf_array[idx], root_k, k);
-                    _pushQueue(&_queue, root_k, uf_array[idx]);
-                    LOG(LOG_LEVEL_INFO, "T%d have push %d to %d which is root of %d", idx, uf_array[idx], root_k, k);
-                }
+                LOG(LOG_LEVEL_DEBUG, "gpu find pair %d %d", idx, k);
+                neighbor_array[index] = true;
             }
-        }
-    }
-
-    // customer
-    while (true)
-    {
-        bool finishFlag;
-        if (idx == n - 1)
-            finishFlag = true;
-        else if (_finishFlags[idx + 1] == true)
-        {
-            finishFlag = true;
-        }
-        else
-            finishFlag = false;
-
-        // __nanosleep(1000);
-        LOG(LOG_LEVEL_DEBUG, "T%d want to pop", idx);
-        int k = _popQueue(&_queue, idx);
-        if (k != -1)
-            LOG(LOG_LEVEL_INFO, "T%d pop %d", idx, k);
-        if (k == idx)
-            continue;
-        else if (k > idx)
-            LOG(LOG_LEVEL_ERROR, "T%d queue have item %d large than self", idx, k);
-        else if (k != -1)
-        {
-            int root_k = _findRoot(uf_array, k);
-            if (root_k > k)
-                LOG(LOG_LEVEL_ERROR, "T%d root_k %d is large than k %d", idx, root_k, k);
-
-            if (uf_array[idx] == idx)
-            {
-                uf_array[idx] = root_k;
-                LOG(LOG_LEVEL_INFO, "T%d linked %d to %d which is root of %d", idx, idx, root_k, k);
-            }
-            else if (uf_array[idx] > root_k)
-            {
-                LOG(LOG_LEVEL_DEBUG, "T%d want to push %d which is root of %d to %d", idx, root_k, k, uf_array[idx]);
-                _pushQueue(&_queue, uf_array[idx], root_k);
-                LOG(LOG_LEVEL_INFO, "T%d have push %d which is root of %d to %d", idx, root_k, k, uf_array[idx]);
-                uf_array[idx] = root_k;
-                LOG(LOG_LEVEL_INFO, "T%d linked %d to %d which is root of %d", idx, idx, root_k, k);
-            }
-            else if (uf_array[idx] < root_k)
-            {
-                LOG(LOG_LEVEL_DEBUG, "T%d want to push %d to %d which is root of %d", idx, uf_array[idx], root_k, k);
-                _pushQueue(&_queue, root_k, uf_array[idx]);
-                LOG(LOG_LEVEL_INFO, "T%d have push %d to %d which is root of %d", idx, uf_array[idx], root_k, k);
-            }
-        }
-        else if (finishFlag == false)
-        {
-            continue;
-        }
-        else
-        {
-            _finishFlags[idx] = true;
-            LOG(LOG_LEVEL_INFO, "T%d finished", idx);
-            break;
         }
     }
 }
@@ -163,7 +89,28 @@ __global__ void ufToLabels(
 
     out_labels[idx] = root;
 }
+int findRootCpu(int *uf, int x)
+{
+    if (uf[x] != x)
+    {
+        uf[x] = findRootCpu(uf, uf[x]);
+    }
+    return uf[x];
+}
 
+void constructUf(int *uf, int idx, int k)
+{
+    int root_k = _findRoot(uf, k);
+    int root_idx = _findRoot(uf, idx);
+    if (root_k < root_idx)
+    {
+        uf[root_idx] = root_k;
+    }
+    else if (root_k > root_idx)
+    {
+        uf[root_k] = root_idx;
+    }
+}
 torch::Tensor ClassifyBallCUDA(
     const torch::Tensor &center,
     const torch::Tensor &radius,
@@ -175,30 +122,60 @@ torch::Tensor ClassifyBallCUDA(
     int *uf_array;
     CHECK_CUDA(cudaMalloc(&uf_array, N * sizeof(int)));
     torch::Tensor out_label = torch::full({N}, 0.0, radius.options().dtype(torch::kInt32));
-    Queue queue;
-    initQueue(&queue, N);
-    bool *_flagArray;
-    CHECK_CUDA(cudaMalloc(&_flagArray, N * sizeof(bool)));
-    CHECK_CUDA(cudaMemset(_flagArray, false, N * sizeof(bool)));
 
     int blockSize = BLOCK_SIZE;                      // 每个块的线程数
     int numBlocks = (N + blockSize - 1) / blockSize; // 计算所需的块数
+    int maxMatrix = MAX_MATRIX;
+    int batchSize = maxMatrix / N;
 
     initUfArray<<<numBlocks, blockSize>>>(
         uf_array,
         N);
 
-    classifyBallUfCUDA<<<numBlocks, blockSize>>>(
-        center.contiguous().data_ptr<float>(),
-        radius.contiguous().data_ptr<float>(),
-        color.contiguous().data_ptr<float>(),
-        dis_thr,
-        color_thr,
-        N,
-        uf_array,
-        queue,
-        _flagArray);
+    int *uf_cpu = (int *)malloc(sizeof(int) * N);
+    CHECK_CUDA(cudaMemcpy(uf_cpu, uf_array, sizeof(int) * N, cudaMemcpyDeviceToHost));
 
+    int loop_num = N / 2;
+    bool *neighbor_array;
+    CHECK_CUDA(cudaMalloc(&neighbor_array, N * batchSize * sizeof(bool)));
+
+    bool *neighbor_array_cpu = (bool *)malloc(N * batchSize * sizeof(bool));
+
+    int idx, i, inner_i;
+    int batchIndex = 0;
+    for (i = 0; i < loop_num; ++i)
+    {
+        inner_i = i - batchIndex * batchSize;
+        if (inner_i >= 0)
+        {
+            calNeighbor<<<numBlocks, blockSize>>>(
+                center.contiguous().data_ptr<float>(),
+                radius.contiguous().data_ptr<float>(),
+                color.contiguous().data_ptr<float>(),
+                dis_thr,
+                color_thr,
+                N, batchIndex, batchSize,
+                neighbor_array);
+            batchIndex += 1;
+            CHECK_CUDA(cudaMemcpy(neighbor_array_cpu, neighbor_array, N * batchSize * sizeof(bool), cudaMemcpyDeviceToHost));
+        }
+        else
+        {
+            inner_i += batchSize;
+        }
+
+        for (idx = 0; idx < N; ++idx)
+        {
+            if (neighbor_array_cpu[idx * batchSize + inner_i] == true)
+            {
+                int k = (idx + i + 1) % N;
+                LOG(LOG_LEVEL_DEBUG, "cpu find pair %d %d", idx, k);
+                constructUf(uf_cpu, idx, k);
+            }
+        }
+    }
+
+    CHECK_CUDA(cudaMemcpy(uf_array, uf_cpu, sizeof(int) * N, cudaMemcpyHostToDevice));
     ufToLabels<<<numBlocks, blockSize>>>(
         uf_array,
         out_label.contiguous().data_ptr<int>(),
@@ -208,7 +185,5 @@ torch::Tensor ClassifyBallCUDA(
 
     // 在CUDA内核调用后
     cudaFree(uf_array);
-    cudaFree(_flagArray);
-    freeQueue(&queue);
     return out_label;
 }

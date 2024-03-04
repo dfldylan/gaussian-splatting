@@ -1,9 +1,10 @@
 import torch
 from torch_func import classify_ball_op  # 替换为你的模块名
 
+
 def test_classify_ball_cuda():
     # 设置输入参数
-    N = 10  # 假设有10个球
+    N = 1000000  # 假设有10个球
     dis_thr = 0.0
     color_thr = 0.5
     torch.manual_seed(N)
@@ -21,6 +22,7 @@ def test_classify_ball_cuda():
     assert out_label.size(0) == N
     assert out_label.dtype == torch.int32
     print("Test passed.")
+
 
 # 运行测试
 if __name__ == "__main__":
