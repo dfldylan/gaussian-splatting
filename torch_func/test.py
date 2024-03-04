@@ -6,6 +6,7 @@ def test_classify_ball_cuda():
     N = 10  # 假设有10个球
     dis_thr = 0.0
     color_thr = 0.5
+    torch.manual_seed(N)
 
     # 生成随机输入数据
     center = torch.rand(N, 3, device='cuda', dtype=torch.float32)

@@ -1,132 +1,11 @@
 #include <cuda_runtime.h>
 #include <torch/extension.h>
+#include "check_cuda.h"
+#include "log.h"
+#include "queue_cuda.cu"
+#include "sleep.h"
 #define BLOCK_SIZE 256
 
-__device__ void mutexLock(int *mutex)
-{
-    while (atomicCAS(mutex, 0, 1) != 0)
-    {
-        __nanosleep(10);
-    }
-}
-
-__device__ bool mutexTryLock(int *mutex)
-{
-    if (atomicCAS(mutex, 0, 1) == 0)
-    {
-        return true;
-    }
-    else
-    {
-        return false;
-    }
-}
-
-__device__ void mutexUnlock(int *mutex)
-{
-    atomicExch(mutex, 0);
-}
-
-__device__ void _linkUf(
-    int *uf_array,
-    int a, // select
-    int b, // neighbor
-    int *ball_lock)
-{
-    // get and lock root_a and root_b
-    int root_a, root_b, x;
-    bool finish = false;
-    bool failed = false;
-    while (true)
-    {
-        __nanosleep((a % 10) * 10);
-        failed = false;
-        root_a = a;
-        mutexLock(&ball_lock[root_a]);
-        while (uf_array[root_a] != root_a)
-        {
-            mutexUnlock(&ball_lock[root_a]);
-            root_a = uf_array[root_a];
-            if (!mutexTryLock(&ball_lock[root_a]))
-            {
-                failed = true;
-                break;
-            };
-        }
-        if (failed)
-        {
-            continue;
-        }
-        // get and lock root_a success
-        // 路径压缩
-        x = a;
-        while (uf_array[x] != root_a)
-        {
-            int tmp = uf_array[x];
-            uf_array[x] = root_a;
-            //printf("idx %d link %d -> %d\n", a, x, root_a);
-            x = tmp;
-        }
-
-        root_b = b;
-        if (root_a == root_b)
-        {
-            finish = true;
-            mutexUnlock(&ball_lock[root_a]);
-            break;
-        }
-        if (!mutexTryLock(&ball_lock[root_b]))
-        {
-            failed = true;
-            mutexUnlock(&ball_lock[root_a]);
-            continue;
-        }
-        while (uf_array[root_b] != root_b)
-        {
-            mutexUnlock(&ball_lock[root_b]);
-            root_b = uf_array[root_b];
-            if (root_a == root_b)
-            {
-                finish = true;
-                break;
-            }
-            if (!mutexTryLock(&ball_lock[root_b]))
-            {
-                failed = true;
-                break;
-            };
-        }
-        if (finish)
-        {
-            mutexUnlock(&ball_lock[root_a]);
-            break;
-        }
-        if (failed)
-        {
-            mutexUnlock(&ball_lock[root_a]);
-            continue;
-        }
-        // get and lock root_b success
-        // 路径压缩
-        x = b;
-        while (uf_array[x] != root_b)
-        {
-            int tmp = uf_array[x];
-            uf_array[x] = root_b;
-            //printf("idx %d link %d -> %d\n", a, x, root_b);
-            x = tmp;
-        }
-
-        uf_array[a] = root_b;
-        uf_array[root_a] = root_b;
-        //printf("idx %d link %d -> %d\n", a, a, root_b);
-        //printf("idx %d link %d -> %d\n", a, root_a, root_b);
-
-        mutexUnlock(&ball_lock[root_a]);
-        mutexUnlock(&ball_lock[root_b]);
-        break;
-    }
-}
 
 __global__ void initUfArray(
     int *uf_array,
@@ -146,12 +25,13 @@ __global__ void classifyBallUfCUDA(
     const float color_thr,
     int n,
     int *uf_array,
-    int *ball_lock)
+    Queue _queue,
+    bool *_finishFlags)
 {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx >= n)
         return;
-
+    // producer
     const float *new_center = center + idx * 3;
     float new_x = new_center[0];
     float new_y = new_center[1];
@@ -163,11 +43,8 @@ __global__ void classifyBallUfCUDA(
     float new_cz = new_color[2];
     float cthr2 = color_thr * color_thr;
 
-    int loop_num = n / 2;
-    for (int i = 0; i < loop_num; ++i)
+    for (int k = 0; k < idx; ++k)
     {
-        int k = (idx - 1 - i) % n;
-        // printf("idx %d start handle %d\n", idx, k);
         float x = center[k * 3 + 0];
         float y = center[k * 3 + 1];
         float z = center[k * 3 + 2];
@@ -185,14 +62,89 @@ __global__ void classifyBallUfCUDA(
             if (cd2 < cthr2)
             {
                 // find one
-                //printf("idx %d find neighbor %d\n", idx, k);
-                _linkUf(uf_array, idx, k, ball_lock);
-                //printf("idx %d linked neighbor %d\n", idx, k);
+                int root_k = _findRoot(uf_array, k);
+                if (uf_array[idx] == idx)
+                {
+                    uf_array[idx] = root_k;
+                    LOG(LOG_LEVEL_INFO, "T%d linked %d to %d which is root of %d", idx, idx, root_k, k);
+                }
+                else if (uf_array[idx] > root_k)
+                {
+                    LOG(LOG_LEVEL_DEBUG, "T%d want to push %d which is root of %d to %d", idx, root_k, k, uf_array[idx]);
+                    _pushQueue(&_queue, uf_array[idx], root_k);
+                    LOG(LOG_LEVEL_INFO, "T%d have push %d which is root of %d to %d", idx, root_k, k, uf_array[idx]);
+                    uf_array[idx] = root_k;
+                    LOG(LOG_LEVEL_INFO, "T%d linked %d to %d which is root of %d", idx, idx, root_k, k);
+                }
+                else if (uf_array[idx] < root_k)
+                {
+                    LOG(LOG_LEVEL_DEBUG, "T%d want to push %d to %d which is root of %d", idx, uf_array[idx], root_k, k);
+                    _pushQueue(&_queue, root_k, uf_array[idx]);
+                    LOG(LOG_LEVEL_INFO, "T%d have push %d to %d which is root of %d", idx, uf_array[idx], root_k, k);
+                }
             }
         }
-        // printf("idx %d have handled %d\n", idx, k);
     }
-    //printf("idx %d is finished!\n", idx);
+
+    // customer
+    while (true)
+    {
+        bool finishFlag;
+        if (idx == n - 1)
+            finishFlag = true;
+        else if (_finishFlags[idx + 1] == true)
+        {
+            finishFlag = true;
+        }
+        else
+            finishFlag = false;
+
+        // __nanosleep(1000);
+        LOG(LOG_LEVEL_DEBUG, "T%d want to pop", idx);
+        int k = _popQueue(&_queue, idx);
+        if (k != -1)
+            LOG(LOG_LEVEL_INFO, "T%d pop %d", idx, k);
+        if (k == idx)
+            continue;
+        else if (k > idx)
+            LOG(LOG_LEVEL_ERROR, "T%d queue have item %d large than self", idx, k);
+        else if (k != -1)
+        {
+            int root_k = _findRoot(uf_array, k);
+            if (root_k > k)
+                LOG(LOG_LEVEL_ERROR, "T%d root_k %d is large than k %d", idx, root_k, k);
+
+            if (uf_array[idx] == idx)
+            {
+                uf_array[idx] = root_k;
+                LOG(LOG_LEVEL_INFO, "T%d linked %d to %d which is root of %d", idx, idx, root_k, k);
+            }
+            else if (uf_array[idx] > root_k)
+            {
+                LOG(LOG_LEVEL_DEBUG, "T%d want to push %d which is root of %d to %d", idx, root_k, k, uf_array[idx]);
+                _pushQueue(&_queue, uf_array[idx], root_k);
+                LOG(LOG_LEVEL_INFO, "T%d have push %d which is root of %d to %d", idx, root_k, k, uf_array[idx]);
+                uf_array[idx] = root_k;
+                LOG(LOG_LEVEL_INFO, "T%d linked %d to %d which is root of %d", idx, idx, root_k, k);
+            }
+            else if (uf_array[idx] < root_k)
+            {
+                LOG(LOG_LEVEL_DEBUG, "T%d want to push %d to %d which is root of %d", idx, uf_array[idx], root_k, k);
+                _pushQueue(&_queue, root_k, uf_array[idx]);
+                LOG(LOG_LEVEL_INFO, "T%d have push %d to %d which is root of %d", idx, uf_array[idx], root_k, k);
+            }
+        }
+        else if (finishFlag == false)
+        {
+            continue;
+        }
+        else
+        {
+            _finishFlags[idx] = true;
+            LOG(LOG_LEVEL_INFO, "T%d finished", idx);
+            break;
+        }
+    }
 }
 
 __global__ void ufToLabels(
@@ -221,11 +173,13 @@ torch::Tensor ClassifyBallCUDA(
 {
     int N = radius.size(0);
     int *uf_array;
-    cudaMalloc(&uf_array, N * sizeof(int));
-    int *ball_lock;
-    cudaMalloc(&ball_lock, N * sizeof(int));
-    cudaMemset(ball_lock, 0, N * sizeof(int));
+    CHECK_CUDA(cudaMalloc(&uf_array, N * sizeof(int)));
     torch::Tensor out_label = torch::full({N}, 0.0, radius.options().dtype(torch::kInt32));
+    Queue queue;
+    initQueue(&queue, N);
+    bool *_flagArray;
+    CHECK_CUDA(cudaMalloc(&_flagArray, N * sizeof(bool)));
+    CHECK_CUDA(cudaMemset(_flagArray, false, N * sizeof(bool)));
 
     int blockSize = BLOCK_SIZE;                      // 每个块的线程数
     int numBlocks = (N + blockSize - 1) / blockSize; // 计算所需的块数
@@ -242,7 +196,8 @@ torch::Tensor ClassifyBallCUDA(
         color_thr,
         N,
         uf_array,
-        ball_lock);
+        queue,
+        _flagArray);
 
     ufToLabels<<<numBlocks, blockSize>>>(
         uf_array,
@@ -253,6 +208,7 @@ torch::Tensor ClassifyBallCUDA(
 
     // 在CUDA内核调用后
     cudaFree(uf_array);
-    cudaFree(ball_lock);
+    cudaFree(_flagArray);
+    freeQueue(&queue);
     return out_label;
 }
