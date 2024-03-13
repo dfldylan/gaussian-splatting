@@ -2,6 +2,7 @@ import open3d as o3d
 import numpy as np
 import torch
 
+
 def categorize(points, eps=0.05):
     pcd = o3d.geometry.PointCloud(o3d.utility.Vector3dVector(points))
     labels = np.array(pcd.cluster_dbscan(eps=eps, min_points=10, print_progress=False))
@@ -24,13 +25,13 @@ def similarity_mask(vectors, target, threshold=0.9, ret_fixed=False):
 
     # Calculate the Euclidean distance between each vector and the target
     bias = (vectors - target)
-    distances = torch.sqrt(torch.sum(bias ** 2, axis=1))
+    dist2 = torch.sum(bias ** 2, axis=1)
 
     # Create a mask where distances are less than or equal to the threshold
-    mask = distances <= threshold
+    mask = dist2 <= threshold ** 2
 
     if ret_fixed:
-        normal = bias / distances.unsqueeze(-1)
+        normal = bias / torch.sqrt(dist2).unsqueeze(-1)
         fixed = threshold * normal + target
         return mask, fixed
 
