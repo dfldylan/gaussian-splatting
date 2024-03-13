@@ -107,7 +107,7 @@ class OptimizationParams(ParamGroup):
         self.lambda_dssim = 0.2
         self.lambda_dens = 0.1
         self.lambda_aniso = 0.1
-        self.lambda_vol = 0.01
+        self.lambda_vol = 0.05
         self.densify_grad_threshold = 0.001
         self.random_background = False
         self.track_feat_lr = 0.001
