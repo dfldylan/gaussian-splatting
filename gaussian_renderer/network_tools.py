@@ -8,22 +8,23 @@ from arguments import ModelParams
 from scene.cameras import MiniCam
 from utils.tools import categorize, similarity_mask
 from utils.sh_utils import RGB2SH
+from torch_func import classify_ball_op  # 替换为你的模块名
 
 
-def build_gausframe(gaussians=None, trans=None, time=None, gaussians_bg=None):
+def build_gaussframe(gaussians=None, trans=None, time=None, gaussians_bg=None):
     gaussians_bg: GaussianModel
     gaussians: GaussianModel
     if gaussians_bg is not None:
-        gausframe_0 = gaussians_bg.move_0()
+        gaussframe_0 = gaussians_bg.move_0()
     if gaussians is not None and gaussians.is_available:
         dt_xyz, dt_scaling, dt_rotation = trans(time)
-        gausframe = gaussians.move(dt_xyz, dt_scaling, dt_rotation)
+        gaussframe = gaussians.move(dt_xyz, dt_scaling, dt_rotation)
     if gaussians_bg is not None:
         if gaussians is not None and gaussians.is_available:
-            gausframe_0.add_extra_gaussians(gausframe)
-        return gausframe_0
+            gaussframe_0.add_extra_gaussians(gaussframe)
+        return gaussframe_0
     elif gaussians is not None and gaussians.is_available:
-        return gausframe
+        return gaussframe
     else:
         return None
 
@@ -40,47 +41,37 @@ def handle_network(pipe, gaussians_bg, gaussians, trans, time_info, background, 
             if custom_cam != None:
                 time = time_info.get_time(frame / 100 * (lp.end_frame - lp.start_frame) + lp.start_frame)
                 if checkbox_1 is False and checkbox_2 is False:
-                    gausframe = build_gausframe(gaussians_bg=gaussians_bg, gaussians=gaussians, trans=trans, time=time)
+                    gaussframe = build_gaussframe(gaussians_bg=gaussians_bg, gaussians=gaussians, trans=trans, time=time)
                 elif checkbox_1 is False and checkbox_2 is True:
-                    gausframe = build_gausframe(gaussians_bg=gaussians_bg)
-                elif checkbox_1 is True:
-                    _gaussians = copy.deepcopy(gaussians)
+                    gaussframe = build_gaussframe(gaussians_bg=gaussians_bg)
+                elif checkbox_1 is True and checkbox_2 is False:
+                    gaussframe = build_gaussframe(gaussians=gaussians, trans=trans, time=time)
+                elif checkbox_1 is True and checkbox_2 is True:
+                    _gaussians: GaussianModel = copy.deepcopy(gaussians)
                     _trans = copy.deepcopy(trans)
-                    if checkbox_2 is True:
-                        mask = \
-                            similarity_mask(_gaussians._features_dc.squeeze(1), RGB2SH(np.asarray(lp.dynamics_color)),
-                                            threshold=slider_float_1)[0]
-                        _gaussians.prune_points(~mask, trans=_trans)
+                    _gaussians.prune_min_opacity(min_opacity, trans=_trans)
+                    if checkbox_3 is False:
+                        _gaussians.prune_color(dest_color=lp.dynamics_color, bias=slider_float_2, trans=_trans)
+                    else:
+                        _gaussians.split_ball(trans=_trans)
+                        labels = classify_ball_op(_gaussians.get_xyz, _gaussians.get_scaling.mean(dim=1),
+                                                  _gaussians._features_dc.squeeze(1), dis_thr=slider_float_1,
+                                                  color_thr=slider_float_2)
+                        unique_labels, counts = torch.unique(labels, return_counts=True)
+                        order = torch.argsort(counts).__reversed__()
+                        unique_labels = unique_labels[order]
+                        # counts = counts[order]
 
-                    if checkbox_3 is True:
-                        prune_mask = (_gaussians.get_opacity < min_opacity).squeeze()
-                        _gaussians.prune_points(prune_mask, trans=_trans)
-                        points = _gaussians.get_xyz.cpu().detach().numpy()
-                        unique_labels, counts, labels = categorize(points, eps=slider_float_2 / 10)
-                        # 使用 Matplotlib 的颜色映射
-                        cmap = plt.get_cmap("tab10")  # 您可以选择 'viridis', 'plasma', 'inferno', 'magma', 'tab10', 'Set1' 等
-                        colors = [cmap(i) for i in range(10)]
-                        dc = np.zeros_like(points)
-                        opacity = np.full(labels.shape, 0.05)  # 初始化所有点的不透明度为0.05
-                        # select_crop = None if abs(slider_float_2 - 1) < 1e-5 else int(10 * slider_float_2)
-                        # if select_crop is None:
-                        #     color_map = {unique_labels[i]: colors[i] for i in range(10)}
-                        # else:
-                        #     color_map = {unique_labels[select_crop]: colors[select_crop]}
-                        color_map = {unique_labels[i]: colors[i] for i in range(min(10, unique_labels.shape[0]))}
-                        for label, color in color_map.items():
-                            mask = labels == label
-                            dc[mask] = color[:3]  # 分配颜色
-                            opacity[mask] = 0.8  # 分配不透明度
-                        dc = RGB2SH(dc)
+                        dc, opacity = print_color(labels, unique_labels, target_color=lp.dynamics_color,
+                                                  color_tensor=_gaussians._features_dc.squeeze(1))
 
                         _gaussians.set_opacity(value=torch.tensor(opacity, dtype=torch.float, device="cuda"))
                         _gaussians.set_featrue_dc(
                             new_dc=torch.tensor(dc, dtype=torch.float, device="cuda").unsqueeze(1))
 
-                    gausframe = build_gausframe(gaussians=_gaussians, trans=_trans, time=time)
+                    gaussframe = build_gaussframe(gaussians=_gaussians, trans=_trans, time=time)
 
-                net_image = render(custom_cam, gausframe, pipe, background, scaling_modifer)["render"]
+                net_image = render(custom_cam, gaussframe, pipe, background, scaling_modifer)["render"]
                 net_image_bytes = memoryview(
                     (torch.clamp(net_image, min=0, max=1.0) * 255).byte().permute(1, 2, 0).contiguous().cpu().numpy())
             network_gui.send(net_image_bytes, lp.source_path)
@@ -88,3 +79,24 @@ def handle_network(pipe, gaussians_bg, gaussians, trans, time_info, background, 
                 break
         except Exception as e:
             network_gui.conn = None
+
+
+def print_color(labels, unique_labels, target_color=None, color_tensor=None):
+    labels = labels.detach().cpu().numpy()
+    unique_labels = unique_labels.detach().cpu().numpy()
+    # 使用 Matplotlib 的颜色映射
+    cmap = plt.get_cmap("tab10")  # 您可以选择 'viridis', 'plasma', 'inferno', 'magma', 'tab10', 'Set1' 等
+    colors = [cmap(i) for i in range(10)]
+    dc = np.zeros(shape=[labels.shape[0], 3])
+    opacity = np.full(labels.shape, 0.05)  # 初始化所有点的不透明度为0.05
+    color_map = {unique_labels[i]: colors[i] for i in range(min(10, unique_labels.shape[0]))}
+    for label, color in color_map.items():
+        mask = labels == label
+        dc[mask] = color[:3]  # 分配颜色
+        opacity[mask] = 0.5  # 分配不透明度
+        if target_color is not None and torch.any(
+                similarity_mask(vectors=color_tensor, target=target_color, threshold=0.65)[0]):
+            opacity[mask] = 1.0
+    dc = RGB2SH(dc)
+
+    return dc, opacity
