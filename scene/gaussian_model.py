@@ -21,6 +21,8 @@ from simple_knn._C import distCUDA2
 from utils.graphics_utils import BasicPointCloud
 from utils.general_utils import strip_symmetric, build_scaling_rotation
 from scene.trans_model import TransModel
+from torch_func import classify_ball_op  # 替换为你的模块名
+from utils.tools import similarity_mask
 
 
 class GaussianFrame:
@@ -503,10 +505,19 @@ class GaussianModel(GaussianFrame):
         optimizable_tensors = self.replace_tensor_to_optimizer(new_scaling, "scaling")
         self._scaling = optimizable_tensors["scaling"]
 
-    def split_ellipsoids(self, N=2, trans=None, target_radius=None):
-        # 计算目标半径
-        threshold = torch.quantile(torch.max(self.get_scaling, dim=1).values,
-                                   0.8) if target_radius is None else 1.8 * target_radius
+    def split_ellipsoids(self, N=2, trans=None, target_radius=None, max_num=None):
+
+        threshold = []
+        if max_num is not None:
+            threshold.append(torch.quantile(torch.max(self.get_scaling, dim=1).values,
+                                            torch.clip(1 - (max_num - self.get_num) / self.get_num, min=0)))
+        if target_radius is not None:
+            threshold.append(1.8 * target_radius)
+        if len(threshold) == 0:
+            threshold = torch.quantile(torch.max(self.get_scaling, dim=1).values, 0.8)
+        else:
+            threshold = max(threshold)
+
         selected_pts_mask = torch.any(self.get_scaling > threshold, dim=1)
         # 检测并分裂
         stds = self.get_scaling[selected_pts_mask].repeat(N, 1)
@@ -543,11 +554,7 @@ class GaussianModel(GaussianFrame):
                                               torch.max(self.get_scaling,
                                                         dim=1).values > self.percent_dense * scene_extent)
 
-        stds = self.get_scaling[selected_pts_mask].repeat(N, 1)
-        means = torch.zeros((stds.size(0), 3), device="cuda")
-        samples = torch.normal(mean=means, std=stds)
-        rots = build_rotation(self._rotation[selected_pts_mask]).repeat(N, 1, 1)
-        new_xyz = torch.bmm(rots, samples.unsqueeze(-1)).squeeze(-1) + self.get_xyz[selected_pts_mask].repeat(N, 1)
+        new_xyz = self.cal_split_xyz(selected_pts_mask, N)
         new_vel = self._vel[selected_pts_mask].repeat(N, 1)
         new_scaling = self.scaling_inverse_activation(self.get_scaling[selected_pts_mask].repeat(N, 1) / (0.8 * N))
         new_rotation = self._rotation[selected_pts_mask].repeat(N, 1)
@@ -588,7 +595,7 @@ class GaussianModel(GaussianFrame):
         if trans is not None:
             trans.densify(selected_pts_mask)
 
-    def densify_and_prune(self, max_grad, min_opacity, extent, max_screen_size, trans: TransModel = None):
+    def densify_and_prune(self, max_grad, min_opacity, extent, max_screen_size=None, trans: TransModel = None):
         grads = self.xyz_gradient_accum / self.denom
         grads[grads.isnan()] = 0.0
 
@@ -628,3 +635,82 @@ class GaussianModel(GaussianFrame):
     @property
     def is_available(self):
         return False if self.get_num == 0 else True
+
+    def prune_min_opacity(self, min_opacity, trans=None):
+        opacity_mask = (self.get_opacity < min_opacity).squeeze()
+        self.prune_points(opacity_mask, trans=trans)
+
+    def prune_district(self, dis_thr=0.075, color_thr=0.65, first_class=0, trans=None):
+        labels = classify_ball_op(self.get_xyz, self.get_scaling.mean(dim=1), self._features_dc.squeeze(1), dis_thr,
+                                  color_thr)
+        unique_labels, counts = torch.unique(labels, return_counts=True)
+        order = torch.argsort(counts)[::-1]
+        select_label = unique_labels[order[first_class]]
+        mask = labels == select_label
+        self.prune_points(~mask, trans=trans)
+
+    def split_ball(self, max_num=1000000, trans: TransModel = None):
+        """
+        将椭球切割为多个正球
+        """
+        if self.get_num > max_num:
+            return
+        scaling = self.get_scaling
+        radius = torch.min(scaling)
+        split_num = torch.floor(torch.prod(scaling / radius, dim=1)).int()
+        ratio = min(max_num, 2 * self.get_num) / torch.sum(split_num)
+        if ratio < 1:  # exceed
+            split_num = torch.clip(torch.floor(split_num * ratio), min=1).int()
+        selected_pts_mask = split_num > 1
+        if not selected_pts_mask.any():
+            return  # 如果没有任何点需要切割，则直接返回
+        split_num = split_num[selected_pts_mask]
+
+        new_xyz = self.cal_split_xyz(selected_pts_mask, split_num)
+        new_vel = torch.repeat_interleave(self._vel[selected_pts_mask], split_num, dim=0)
+        new_scaling = self.scaling_inverse_activation(radius.unsqueeze(0).repeat(torch.sum(split_num), 3))
+        new_rotation = torch.repeat_interleave(self.get_rotation[selected_pts_mask], split_num, dim=0)
+        new_features_dc = torch.repeat_interleave(self._features_dc[selected_pts_mask], split_num, dim=0)
+        new_features_rest = torch.repeat_interleave(self._features_rest[selected_pts_mask], split_num, dim=0)
+        new_opacity = torch.repeat_interleave(self._opacity[selected_pts_mask], split_num, dim=0)
+        new_cfd = torch.repeat_interleave(self._cfd[selected_pts_mask], split_num, dim=0)
+
+        self.densification_postfix(new_xyz, new_vel, new_features_dc, new_features_rest, new_opacity, new_cfd,
+                                   new_scaling, new_rotation)
+
+        if trans is not None:
+            trans.densify(selected_pts_mask, split_num)
+
+        prune_filter = torch.cat((selected_pts_mask, torch.zeros(split_num.sum(), device="cuda", dtype=bool)))
+        self.prune_points(prune_filter, trans)
+
+    def cal_split_xyz(self, selected_pts_mask, N):
+        # 检查split_num的类型来决定处理方式
+        if isinstance(N, int):
+            N = torch.full((selected_pts_mask.sum(),), N, device="cuda")
+
+        # 构建旋转矩阵和标准差，这部分对两种情况都是通用的
+        rots = torch.repeat_interleave(build_rotation(self._rotation[selected_pts_mask]), N, dim=0)
+        stds = torch.repeat_interleave(self.get_scaling[selected_pts_mask], N, dim=0)
+
+        # 生成均值为0的正态分布样本
+        means = torch.zeros((stds.size(0), 3), device="cuda")
+        samples = torch.normal(mean=means, std=stds)
+
+        # 计算新的坐标点
+        new_xyz = torch.bmm(rots, samples.unsqueeze(-1)).squeeze(-1) + \
+                  torch.repeat_interleave(self.get_xyz[selected_pts_mask], N, dim=0)
+
+        return new_xyz
+
+    def split_prune_district(self, min_opacity=0.005, dis_thr=0.075, color_thr=0.65, first_class=0, trans=None):
+        self.prune_min_opacity(min_opacity, trans=trans)
+        self.split_ball(trans=trans)
+        self.prune_district(dis_thr=dis_thr, color_thr=color_thr, first_class=first_class, trans=trans)
+
+    def prune_color(self, dest_color, bias=0.65, trans=None):
+        if dest_color is None:
+            return
+        sh = RGB2SH(np.asarray(dest_color))
+        mask = similarity_mask(self._features_dc.squeeze(1), sh, threshold=bias)[0]
+        self.prune_points(~mask, trans)
