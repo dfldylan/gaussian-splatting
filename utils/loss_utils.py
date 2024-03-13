@@ -13,22 +13,28 @@ import torch
 import torch.nn.functional as F
 from torch.autograd import Variable
 from math import exp
+from utils.density import compute_density
+
 
 def l1_loss(network_output, gt):
     return torch.abs((network_output - gt)).mean()
 
+
 def l2_loss(network_output, gt):
     return ((network_output - gt) ** 2).mean()
+
 
 def gaussian(window_size, sigma):
     gauss = torch.Tensor([exp(-(x - window_size // 2) ** 2 / float(2 * sigma ** 2)) for x in range(window_size)])
     return gauss / gauss.sum()
+
 
 def create_window(window_size, channel):
     _1D_window = gaussian(window_size, 1.5).unsqueeze(1)
     _2D_window = _1D_window.mm(_1D_window.t()).float().unsqueeze(0).unsqueeze(0)
     window = Variable(_2D_window.expand(channel, 1, window_size, window_size).contiguous())
     return window
+
 
 def ssim(img1, img2, window_size=11, size_average=True):
     channel = img1.size(-3)
@@ -39,6 +45,7 @@ def ssim(img1, img2, window_size=11, size_average=True):
     window = window.type_as(img1)
 
     return _ssim(img1, img2, window, window_size, channel, size_average)
+
 
 def _ssim(img1, img2, window, window_size, channel, size_average=True):
     mu1 = F.conv2d(img1, window, padding=window_size // 2, groups=channel)
@@ -62,3 +69,21 @@ def _ssim(img1, img2, window, window_size, channel, size_average=True):
     else:
         return ssim_map.mean(1).mean(1).mean(1)
 
+
+def aniso_loss(scaling: torch.Tensor):
+    mean = scaling.mean(1, keepdims=True)
+    loss = (scaling / mean - 1).abs().mean()
+    return loss
+
+
+def vol_loss(scaling: torch.Tensor):
+    prod = torch.prod(scaling, dim=1)
+    mean = prod.mean()
+    loss = (prod / mean - 1).abs().mean()
+    return loss
+
+
+def density_loss(xyz, h=0.2, k=64):
+    density = compute_density(xyz, h, k)
+    loss = torch.clip(density / density.mean() - 1, min=0).square().mean()
+    return loss

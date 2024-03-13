@@ -14,31 +14,40 @@ def poly6_kernel(r, h):
     return result
 
 
-def compute_density(positions, h):
-    """
-    使用Open3D的固定半径搜索优化的密度计算函数。
-    :param positions: 粒子位置的张量，形状为[-1, 3]。
-    :param h: 核函数的影响半径。
-    :return: 粒子的密度估计，形状为[-1, 1]。
-    """
-    # 固定半径搜索
-    fixed_radius_search = o3dml.layers.FixedRadiusSearch(index_dtype=torch.int64)
-    neighbors_index, neighbors_row_splits, _ = fixed_radius_search(queries=positions, points=positions, radius=h)
-    # dens = o3dml.ops.reduce_subarrays_sum(poly6_kernel(torch.sqrt(torch.clamp(_, min=0)), h), neighbors_row_splits)
-    # 计算重复次数
-    repeats = neighbors_row_splits[1:] - neighbors_row_splits[:-1]
-    # 逐元素复制
-    positions_repeat = torch.repeat_interleave(positions, repeats,dim=0)
-    # 计算密度
-    dist = positions[neighbors_index] - positions_repeat
-    dens = poly6_kernel(torch.norm(dist, dim=-1), h)  # [-1, None]
-    dens = o3dml.ops.reduce_subarrays_sum(dens, neighbors_row_splits)
+def compute_density(positions, h=0.2, k=64):
+    positions_cpu = positions.cpu()
+
+    nsearch = o3dml.layers.KNNSearch(index_dtype=torch.int64)
+    ans = nsearch(points=positions_cpu, queries=positions_cpu, k=k)
+
+    neighbors_positions = positions[ans.neighbors_index].reshape(-1, k, 3)  # [N,k,3]
+    expanded_positions = positions.unsqueeze(1)  # [N,1,3]
+    dist = neighbors_positions - expanded_positions  # broadcast [N,k,3]
+    dens = poly6_kernel(torch.norm(dist, dim=-1), h)  # [N,k]
+    dens = torch.sum(dens, dim=1)  # [N]
     return dens
 
 
 if __name__ == '__main__':
-    # 示例用法
-    positions = torch.tensor([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]])  # 示例粒子位置
-    h = 1.5  # 核函数的影响半径
-    densities = compute_density(positions, h)
-    print(densities)
+    import open3d.core as o3c
+    import torch
+    import numpy as np
+
+    # 确保PyTorch Tensor在GPU上
+    device = torch.device('cuda')
+
+    # 创建随机的点云数据作为PyTorch Tensor
+    points = torch.rand(100, 3, device=device, dtype=torch.float32)
+    query_points = torch.rand(10, 3, device=device, dtype=torch.float32)
+
+    # 使用Open3D进行k-NN搜索
+    # 注意：Open3D的k-NN功能可能需要将数据从PyTorch Tensor转换为Open3D格式
+    # 这里是直接操作Open3D Tensor的示范
+    points_o3d = o3c.Tensor.from_dlpack(torch.utils.dlpack.to_dlpack(points))
+    query_points_o3d = o3c.Tensor.from_dlpack(torch.utils.dlpack.to_dlpack(query_points))
+
+    k = 5
+    knn_result = o3c.knn_search(points_o3d, query_points_o3d, k)
+
+    # 注意：结果处理部分依据实际情况编写，这里没有展示结果转回PyTorch Tensor的步骤
+    pass
