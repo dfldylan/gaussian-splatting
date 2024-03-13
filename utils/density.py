@@ -1,6 +1,5 @@
 import torch
-import open3d.ml.torch as o3dml
-from open3d.ml.torch.classes.ragged_tensor import RaggedTensor
+from pytorch3d.ops import knn_points
 
 
 def poly6_kernel(r, h):
@@ -10,44 +9,36 @@ def poly6_kernel(r, h):
     :param h: 核函数的影响半径。
     :return: 核函数值。
     """
-    result = torch.clip((315 / (64 * torch.pi * h ** 9)) * (h ** 2 - r ** 2) ** 3, 0, torch.inf)
+    result = torch.clip((315 / (64 * torch.pi * h ** 9)) * (h ** 2 - r ** 2) ** 3, 0)
     return result
 
 
 def compute_density(positions, h=0.2, k=64):
-    positions_cpu = positions.cpu()
-
-    nsearch = o3dml.layers.KNNSearch(index_dtype=torch.int64)
-    ans = nsearch(points=positions_cpu, queries=positions_cpu, k=k)
-
-    neighbors_positions = positions[ans.neighbors_index].reshape(-1, k, 3)  # [N,k,3]
-    expanded_positions = positions.unsqueeze(1)  # [N,1,3]
-    dist = neighbors_positions - expanded_positions  # broadcast [N,k,3]
-    dens = poly6_kernel(torch.norm(dist, dim=-1), h)  # [N,k]
+    dists, _, _ = knn_points(positions.unsqueeze(0), positions.unsqueeze(0), K=k)
+    dens = poly6_kernel(torch.sqrt(dists[0, :, 1:] + 1e-8), h)  # [N,k]
     dens = torch.sum(dens, dim=1)  # [N]
+    dens = dens + poly6_kernel(torch.zeros_like(positions[0, 0]), h)
     return dens
 
 
 if __name__ == '__main__':
-    import open3d.core as o3c
-    import torch
-    import numpy as np
+    # 启用CUDA
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    # 确保PyTorch Tensor在GPU上
-    device = torch.device('cuda')
+    # 创建两个随机点云，并设置requires_grad=True以跟踪梯度
+    p1 = torch.rand(2, 5, 3, device=device, requires_grad=True)  # Shape: (N=2, P1=5, D=3)
+    p2 = torch.rand(2, 5, 3, device=device, requires_grad=True)  # Shape: (N=2, P2=5, D=3)
 
-    # 创建随机的点云数据作为PyTorch Tensor
-    points = torch.rand(100, 3, device=device, dtype=torch.float32)
-    query_points = torch.rand(10, 3, device=device, dtype=torch.float32)
+    # K-最近邻搜索
+    K = 3  # 查找每个点的3个最近邻
+    dists, idx, _ = knn_points(p1, p2, K=K, return_nn=False)
 
-    # 使用Open3D进行k-NN搜索
-    # 注意：Open3D的k-NN功能可能需要将数据从PyTorch Tensor转换为Open3D格式
-    # 这里是直接操作Open3D Tensor的示范
-    points_o3d = o3c.Tensor.from_dlpack(torch.utils.dlpack.to_dlpack(points))
-    query_points_o3d = o3c.Tensor.from_dlpack(torch.utils.dlpack.to_dlpack(query_points))
+    # 使用最近邻距离的平方和作为损失函数
+    loss = dists.sum()
 
-    k = 5
-    knn_result = o3c.knn_search(points_o3d, query_points_o3d, k)
+    # 反向传播
+    loss.backward()
 
-    # 注意：结果处理部分依据实际情况编写，这里没有展示结果转回PyTorch Tensor的步骤
-    pass
+    # 检查梯度
+    print("Gradient for p1:", p1.grad)
+    print("Gradient for p2:", p2.grad)
