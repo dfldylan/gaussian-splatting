@@ -94,7 +94,7 @@ def training(dataset: ModelParams, opt: OptimizationParams, pipe, checkpoint):
         density_l = 0
         if dynamics_iter > opt.density_from_iter:
             density_l = opt.lambda_dens * density_loss(gaussian_frame_dynamics.get_xyz)
-            loss += density_l
+            loss = loss + density_l
 
         loss.backward()
 
