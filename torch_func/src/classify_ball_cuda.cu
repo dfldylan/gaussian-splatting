@@ -185,5 +185,6 @@ torch::Tensor ClassifyBallCUDA(
 
     // 在CUDA内核调用后
     cudaFree(uf_array);
+    cudaFree(neighbor_array);
     return out_label;
 }
