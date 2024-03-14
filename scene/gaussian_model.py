@@ -64,13 +64,13 @@ class GaussianFrame:
     def __init__(self, active_sh_degree, max_sh_degree, _xyz, _vel, _features_dc, _features_rest, _scaling, _rotation,
                  _opacity, _cfd, use_sigmoid_scaling_activation=False):
         self._xyz = _xyz
-        self._vel = _vel
+        self._vel = _vel  # drop
         self._features_dc = _features_dc
         self._features_rest = _features_rest
         self._scaling = _scaling
         self._rotation = _rotation
         self._opacity = _opacity
-        self._cfd = _cfd
+        self._cfd = _cfd  # drop
 
         self.active_sh_degree = active_sh_degree
         self.max_sh_degree = max_sh_degree
@@ -657,10 +657,10 @@ class GaussianModel(GaussianFrame):
             return
         scaling = self.get_scaling
         radius = torch.min(scaling)
-        split_num = torch.floor(torch.prod(scaling / radius, dim=1)).int()
+        split_num = torch.round(torch.prod(scaling / radius, dim=1)).int()
         ratio = min(max_num, 2 * self.get_num) / torch.sum(split_num)
         if ratio < 1:  # exceed
-            split_num = torch.clip(torch.floor(split_num * ratio), min=1).int()
+            split_num = torch.clip(torch.round(split_num * ratio), min=1).int()
         selected_pts_mask = split_num > 1
         if not selected_pts_mask.any():
             return  # 如果没有任何点需要切割，则直接返回

@@ -15,7 +15,7 @@ import torch
 import yaml
 from random import choice
 
-from utils.loss_utils import l1_loss, ssim, density_loss, aniso_loss, vol_loss
+from utils.loss_utils import l1_loss, ssim, density_loss, aniso_loss, vol_loss, opacity_loss, feature_loss
 from gaussian_renderer import render, network_gui
 from scene import Scene, GaussianModel
 from scene.trans_model import TransModel
@@ -89,8 +89,10 @@ def training(dataset: ModelParams, opt: OptimizationParams, pipe, checkpoint):
         gt_image = viewpoint_cam.original_image.cuda()
         Ll1 = l1_loss(image, gt_image)
         loss = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * (1.0 - ssim(image, gt_image))
-        loss = (loss + opt.lambda_aniso * aniso_loss(gaussian_frame_dynamics.get_scaling) +
-                opt.lambda_vol * vol_loss(gaussian_frame_dynamics.get_scaling))
+        loss = loss + opt.lambda_aniso * aniso_loss(gaussian_frame_dynamics.get_scaling) + opt.lambda_vol * vol_loss(
+            gaussian_frame_dynamics.get_scaling)
+        loss = loss + opt.lambda_opacity * opacity_loss(gaussians.get_opacity) + opt.lambda_feats * feature_loss(
+            gaussians._features_dc)
         density_l = 0
         if dynamics_iter > opt.density_from_iter:
             density_l = opt.lambda_dens * density_loss(gaussian_frame_dynamics.get_xyz)
@@ -120,7 +122,7 @@ def training(dataset: ModelParams, opt: OptimizationParams, pipe, checkpoint):
                 if dynamics_iter <= opt.warm_iterations:
                     if dynamics_iter % 1000 == 0 and dynamics_iter != opt.warm_iterations:
                         gaussians.densify_and_prune(opt.densify_grad_threshold, opt.min_opacity,
-                                                    scene.cameras_extent, None, trans=trans)
+                                                    scene.cameras_extent, 1000, trans=trans)
                         gaussians.split_ball(max_num=opt.max_num_points, trans=trans)
                         gaussians.reset_opacity()
 
@@ -131,10 +133,10 @@ def training(dataset: ModelParams, opt: OptimizationParams, pipe, checkpoint):
                     if dynamics_iter % 1000 == 0:
                         gaussians.densify_and_prune(opt.densify_grad_threshold, opt.min_opacity,
                                                     scene.cameras_extent,
-                                                    None, trans=trans)
+                                                    1000, trans=trans)
                         gaussians.split_ball(max_num=opt.max_num_points, trans=trans)
                         gaussians.double_scaling()
-                        gaussians.reset_opacity(value=torch.mean(gaussians.get_opacity))
+                        # gaussians.reset_opacity(value=0.5)
 
             # Optimizer step
             if iteration <= opt.iterations:

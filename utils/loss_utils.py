@@ -72,18 +72,28 @@ def _ssim(img1, img2, window, window_size, channel, size_average=True):
 
 def aniso_loss(scaling: torch.Tensor):
     mean = scaling.mean(1, keepdims=True)
-    loss = (scaling / mean - 1).abs().mean()
+    loss = (scaling / mean - 1).square().mean()
     return loss
 
 
 def vol_loss(scaling: torch.Tensor):
     prod = torch.prod(scaling, dim=1)
     mean = prod.mean()
-    loss = (prod / mean - 1).abs().mean()
+    loss = (prod / mean - 1).square().mean()
     return loss
 
 
 def density_loss(xyz, h=0.2, k=64):
     density = compute_density(xyz, h, k)
     loss = torch.clip(density / density.mean() - 1, min=0).square().mean()
+    return loss
+
+
+def opacity_loss(opacity):
+    loss = (opacity / opacity.mean() - 1).square().mean()
+    return loss
+
+
+def feature_loss(features):
+    loss = (features / features.mean(0) - 1).square().mean()
     return loss
