@@ -83,7 +83,7 @@ def vol_loss(scaling: torch.Tensor):
     return loss
 
 
-def density_loss(xyz, h=0.2, k=64):
+def density_loss(xyz, h=0.3, k=64):
     density = compute_density(xyz, h, k)
     loss = torch.clip(density / density.mean() - 1, min=0).square().mean()
     return loss

@@ -13,7 +13,7 @@ def poly6_kernel(r, h):
     return result
 
 
-def compute_density(positions, h=0.2, k=64):
+def compute_density(positions, h=0.3, k=64):
     dists, _, _ = knn_points(positions.unsqueeze(0), positions.unsqueeze(0), K=k)
     dens = poly6_kernel(torch.sqrt(dists[0, :, 1:] + 1e-8), h)  # [N,k]
     dens = torch.sum(dens, dim=1)  # [N]
