@@ -28,7 +28,7 @@ class TransModel:
             (self.feats, self.pos_encoder(torch.full(self.feats[:, :1].size(), dt_time, device='cuda')))
             , dim=-1))
         dt_xyz, dt_scaling, dt_rotation = torch.split(dt_time * output, [3, 3, 4], dim=-1)
-        return dt_xyz, dt_scaling, dt_rotation
+        return dt_xyz, 0, 0, 0, 0, 0
 
     def capture(self):
         return (
