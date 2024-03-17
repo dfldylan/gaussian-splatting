@@ -58,7 +58,7 @@ def training(dataset: ModelParams, opt: OptimizationParams, pipe, checkpoint):
     iter_end = torch.cuda.Event(enable_timing=True)
 
     ema_loss_for_log = 0.0
-    progress_bar = tqdm(range(0, opt.iterations), desc="Training progress", initial=first_iter, ncols=120)
+    progress_bar = tqdm(range(0, opt.iterations), desc="Training progress", initial=first_iter)
     first_iter += 1
     for iteration in range(first_iter, opt.iterations + 1):
         handle_network(pipe, None, gaussians, trans, scene.time_info, background,
@@ -108,7 +108,7 @@ def training(dataset: ModelParams, opt: OptimizationParams, pipe, checkpoint):
             # Progress bar
             ema_loss_for_log = 0.4 * loss.item() + 0.6 * ema_loss_for_log
             if iteration % 100 == 0:
-                progress_bar.set_postfix({"Loss": f"{ema_loss_for_log:.{7}f}", "Density_loss": f"{density_l:.{7}f}"})
+                progress_bar.set_postfix({"Loss": f"{ema_loss_for_log:.{7}f}"})
                 progress_bar.update(100)
             if iteration == opt.iterations:
                 progress_bar.close()
@@ -125,7 +125,7 @@ def training(dataset: ModelParams, opt: OptimizationParams, pipe, checkpoint):
                     if dynamics_iter % 1000 == 0 and dynamics_iter != opt.warm_iterations:
                         gaussians.densify_and_prune(opt.densify_grad_threshold, opt.min_opacity,
                                                     scene.cameras_extent, 1000, trans=trans)
-                        gaussians.split_ball(max_num=opt.max_num_points, trans=trans)
+                        gaussians.split_ellipsoids(0.1, max_num=20_0000, trans=trans)
                         gaussians.reset_opacity()
 
                     if dynamics_iter == opt.warm_iterations:
@@ -135,9 +135,9 @@ def training(dataset: ModelParams, opt: OptimizationParams, pipe, checkpoint):
                     if dynamics_iter % 1000 == 0:
                         gaussians.densify_and_prune(opt.densify_grad_threshold, opt.min_opacity,
                                                     scene.cameras_extent, 1000, trans=trans)
-                        gaussians.split_ball(max_num=opt.max_num_points, trans=trans)
+                        gaussians.split_ellipsoids(0.1, max_num=20_0000, trans=trans)
                         gaussians.double_scaling()
-                        # gaussians.reset_opacity(value=0.5)
+                        gaussians.reset_opacity(gaussians.get_opacity.mean())
 
             # Optimizer step
             if iteration <= opt.iterations:
