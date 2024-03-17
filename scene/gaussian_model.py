@@ -641,14 +641,14 @@ class GaussianModel(GaussianFrame):
         mask = labels == select_label
         self.prune_points(~mask, trans=trans)
 
-    def split_ball(self, max_num=1000000, trans: TransModel = None):
+    def split_ball(self, target_radius=0.01, max_num=1000000, trans: TransModel = None):
         """
         将椭球切割为多个正球
         """
         if self.get_num > max_num:
             return
         scaling = self.get_scaling
-        radius = torch.min(scaling)
+        radius = max(torch.min(scaling), target_radius)
         split_num = torch.round(torch.prod(scaling / radius, dim=1)).int()
         ratio = min(max_num, 2 * self.get_num) / torch.sum(split_num)
         if ratio < 1:  # exceed
