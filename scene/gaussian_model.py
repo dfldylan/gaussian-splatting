@@ -23,6 +23,7 @@ from utils.general_utils import strip_symmetric, build_scaling_rotation
 from scene.trans_model import TransModel
 from torch_func import classify_ball_op  # 替换为你的模块名
 from utils.tools import similarity_mask
+from utils.tools import generate_random_bool_tensor
 
 
 class GaussianFrame:
@@ -505,26 +506,17 @@ class GaussianModel(GaussianFrame):
         optimizable_tensors = self.replace_tensor_to_optimizer(new_scaling, "scaling")
         self._scaling = optimizable_tensors["scaling"]
 
-    def split_ellipsoids(self, N=2, trans=None, target_radius=None, max_num=None):
+    def prune_points_random(self, num, trans=None):
+        mask = generate_random_bool_tensor(self.get_num, num)
+        self.prune_points(mask, trans=trans)
 
-        threshold = []
-        if max_num is not None:
-            threshold.append(torch.quantile(torch.max(self.get_scaling, dim=1).values,
-                                            torch.clip(1 - (max_num - self.get_num) / self.get_num, min=0)))
-        if target_radius is not None:
-            threshold.append(1.8 * target_radius)
-        if len(threshold) == 0:
-            threshold = torch.quantile(torch.max(self.get_scaling, dim=1).values, 0.8)
-        else:
-            threshold = max(threshold)
-
+    def split_ellipsoids(self, target_radius=None, max_num=200000, N=2, trans=None):
+        threshold = target_radius
         selected_pts_mask = torch.any(self.get_scaling > threshold, dim=1)
-        # 检测并分裂
-        stds = self.get_scaling[selected_pts_mask].repeat(N, 1)
-        means = torch.zeros((stds.size(0), 3), device="cuda")
-        samples = torch.normal(mean=means, std=stds)
-        rots = build_rotation(self._rotation[selected_pts_mask]).repeat(N, 1, 1)
-        new_xyz = torch.bmm(rots, samples.unsqueeze(-1)).squeeze(-1) + self.get_xyz[selected_pts_mask].repeat(N, 1)
+        if self.get_num + selected_pts_mask.sum() * (N - 1) > max_num:
+            self.prune_points_random(self.get_num + selected_pts_mask.sum() * (N - 1) - max_num, trans=trans)
+            selected_pts_mask = torch.any(self.get_scaling > threshold, dim=1)
+        new_xyz = self.cal_split_xyz(selected_pts_mask, N)
         new_vel = self._vel[selected_pts_mask].repeat(N, 1)
         new_scaling = self.scaling_inverse_activation(self.get_scaling[selected_pts_mask].repeat(N, 1) / (0.8 * N))
         new_rotation = self._rotation[selected_pts_mask].repeat(N, 1)

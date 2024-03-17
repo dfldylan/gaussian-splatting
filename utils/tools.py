@@ -1,6 +1,17 @@
 import torch
 
 
+def generate_random_bool_tensor(size, n_true):
+    assert n_true <= size, "n_true cannot be greater than the tensor size."
+
+    # 创建一个全为 False 的 PyTorch 布尔张量
+    result = torch.zeros(size, dtype=torch.bool)
+
+    # 随机生成不重复的索引
+    true_indices = torch.randperm(size)[:n_true]
+    result[true_indices] = True
+
+    return result
 
 
 def similarity_mask(vectors, target, threshold=0.9, ret_fixed=False):
@@ -21,3 +32,11 @@ def similarity_mask(vectors, target, threshold=0.9, ret_fixed=False):
         return mask, fixed
 
     return mask, None
+
+
+if __name__ == '__main__':
+    # 示例
+    size = 10
+    n_true = 3
+    random_tensor = generate_random_bool_tensor(size, n_true)
+    print(random_tensor)
