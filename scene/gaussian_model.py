@@ -587,7 +587,11 @@ class GaussianModel(GaussianFrame):
         if trans is not None:
             trans.densify(selected_pts_mask)
 
-    def densify_and_prune(self, max_grad, min_opacity, extent, max_screen_size=None, trans: TransModel = None):
+    def densify_and_prune(self, max_grad, min_opacity, extent, max_screen_size=None, prune_min_iters=10,
+                          trans: TransModel = None):
+        prune_mask = (self.denom < prune_min_iters).squeeze()
+        self.prune_points(prune_mask, trans=trans)
+
         grads = self.xyz_gradient_accum / self.denom
         grads[grads.isnan()] = 0.0
 
