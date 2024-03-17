@@ -3,19 +3,6 @@ import numpy as np
 import torch
 
 
-def categorize(points, eps=0.05):
-    pcd = o3d.geometry.PointCloud(o3d.utility.Vector3dVector(points))
-    labels = np.array(pcd.cluster_dbscan(eps=eps, min_points=10, print_progress=False))
-    unique_labels, counts = np.unique(labels[labels != -1], return_counts=True)
-    order = np.argsort(counts)[::-1]
-    return unique_labels[order], counts[order], labels
-
-
-def crop_main(points, eps=0.05, choose=0):
-    unique_labels, counts, labels = categorize(points, eps=eps)
-    largest_cluster_label = unique_labels[choose]
-    mask = labels == largest_cluster_label
-    return mask
 
 
 def similarity_mask(vectors, target, threshold=0.9, ret_fixed=False):

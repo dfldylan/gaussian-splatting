@@ -29,7 +29,6 @@ from argparse import ArgumentParser, Namespace
 from arguments import ModelParams, PipelineParams, OptimizationParams
 from utils.density import compute_density
 from utils.sh_utils import RGB2SH
-from utils.tools import categorize, crop_main, similarity_mask
 from gaussian_renderer.network_tools import handle_network
 
 try:

@@ -6,7 +6,7 @@ from scene import GaussianModel
 from gaussian_renderer import render, network_gui
 from arguments import ModelParams
 from scene.cameras import MiniCam
-from utils.tools import categorize, similarity_mask
+from utils.tools import similarity_mask
 from utils.sh_utils import RGB2SH
 from torch_func import classify_ball_op  # 替换为你的模块名
 
