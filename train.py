@@ -48,7 +48,7 @@ def training(dataset: ModelParams, opt: OptimizationParams, pipe, checkpoint):
         trans.restore(trans_params, opt, reset_time=False)
     else:
         gaussians.create_from_pcd(scene.point_cloud, scene.cameras_extent, init_color=dataset.dynamics_color)
-        gaussians.training_setup(opt, position_lr_max_steps=opt.iterations)
+        gaussians.training_setup(opt, position_lr_max_steps=opt.iterations / 2)
         trans.set_model(dataset, gaussians.get_num, opt)
 
     bg_color = [1, 1, 1] if dataset.white_background else [0, 0, 0]
@@ -68,7 +68,8 @@ def training(dataset: ModelParams, opt: OptimizationParams, pipe, checkpoint):
         bg = torch.rand((3), device="cuda") if opt.random_background else background
         dynamics_iter = iteration
 
-        gaussians.update_learning_rate(dynamics_iter)
+        if dynamics_iter > 0.5 * opt.iterations:
+            gaussians.update_learning_rate(dynamics_iter - 0.5 * opt.iterations)
         if dynamics_iter > opt.warm_iterations:
             start_frame = int(dataset.end_frame - min(1, 2 * dynamics_iter / (opt.iterations)) * (
                     dataset.end_frame - dataset.start_frame))
