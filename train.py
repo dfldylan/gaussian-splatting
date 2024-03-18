@@ -90,18 +90,11 @@ def training(dataset: ModelParams, opt: OptimizationParams, pipe, checkpoint):
         gt_image = viewpoint_cam.original_image.cuda()
         Ll1 = l1_loss(image, gt_image)
         loss = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * (1.0 - ssim(image, gt_image))
-        if dynamics_iter <= 0.5 * opt.iterations:
-            loss = loss + opt.lambda_aniso * aniso_loss(gaussian_frame_dynamics.get_scaling)
-            loss = loss + opt.lambda_vol * vol_loss(gaussian_frame_dynamics.get_scaling)
-            loss = loss + opt.lambda_opacity * opacity_loss(gaussians.get_opacity)
-            loss = loss + opt.lambda_feats * feature_loss(gaussians._features_dc)
-            loss = loss + opt.lambda_dens * density_loss(gaussian_frame_dynamics.get_xyz)
-        else:
-            loss = loss + 10 * opt.lambda_aniso * aniso_loss(gaussian_frame_dynamics.get_scaling)
-            loss = loss + 10 * opt.lambda_vol * vol_loss(gaussian_frame_dynamics.get_scaling)
-            loss = loss + 10 * opt.lambda_opacity * opacity_loss(gaussians.get_opacity)
-            loss = loss + 10 * opt.lambda_feats * feature_loss(gaussians._features_dc)
-            loss = loss + 10 * opt.lambda_dens * density_loss(gaussian_frame_dynamics.get_xyz)
+        loss = loss + opt.lambda_aniso * aniso_loss(gaussian_frame_dynamics.get_scaling)
+        loss = loss + opt.lambda_vol * vol_loss(gaussian_frame_dynamics.get_scaling)
+        loss = loss + opt.lambda_opacity * opacity_loss(gaussians.get_opacity)
+        loss = loss + opt.lambda_feats * feature_loss(gaussians._features_dc)
+        loss = loss + opt.lambda_dens * density_loss(gaussian_frame_dynamics.get_xyz)
         loss.backward()
         iter_end.record()
 
@@ -114,31 +107,37 @@ def training(dataset: ModelParams, opt: OptimizationParams, pipe, checkpoint):
             if iteration == opt.iterations:
                 progress_bar.close()
 
-            # Densification
-            if dynamics_iter <= opt.iterations / 2:
-                # Keep track of max radii in image-space for pruning
-                viewspace_point_tensor_grad = viewspace_point_tensor.grad
-                gaussians.max_radii2D[visibility_filter] = torch.max(gaussians.max_radii2D[visibility_filter],
-                                                                     radii[visibility_filter])
-                gaussians.add_densification_stats(viewspace_point_tensor_grad, visibility_filter)
+            # Keep track of max radii in image-space for pruning
+            viewspace_point_tensor_grad = viewspace_point_tensor.grad
+            gaussians.max_radii2D[visibility_filter] = torch.max(gaussians.max_radii2D[visibility_filter],
+                                                                 radii[visibility_filter])
+            gaussians.add_densification_stats(viewspace_point_tensor_grad, visibility_filter)
 
-                if dynamics_iter <= opt.warm_iterations:
-                    if dynamics_iter % 1000 == 0 and dynamics_iter != opt.warm_iterations:
-                        gaussians.densify_and_prune(opt.densify_grad_threshold, opt.min_opacity,
-                                                    scene.cameras_extent, 1000, trans=trans)
-                        gaussians.split_ellipsoids(0.1, max_num=20_0000, trans=trans)
-                        gaussians.reset_opacity()
+            if dynamics_iter <= opt.warm_iterations:
+                if dynamics_iter % 1000 == 0 and dynamics_iter != opt.warm_iterations:
+                    gaussians.densify_and_prune(opt.densify_grad_threshold, opt.min_opacity,
+                                                scene.cameras_extent, 1000, prune_min_iters=200, trans=trans)
+                    gaussians.split_ellipsoids(0.1, max_num=20_0000, trans=trans)
+                    gaussians.reset_opacity()
 
-                    if dynamics_iter == opt.warm_iterations:
-                        gaussians.prune_min_opacity(min_opacity=opt.min_opacity, trans=trans)
+                if dynamics_iter == opt.warm_iterations:
+                    gaussians.prune_min_opacity(min_opacity=opt.min_opacity, trans=trans)
 
-                if dynamics_iter > opt.warm_iterations:
-                    if dynamics_iter % 1000 == 0:
-                        gaussians.densify_and_prune(opt.densify_grad_threshold, opt.min_opacity,
-                                                    scene.cameras_extent, 1000, trans=trans)
-                        gaussians.split_ellipsoids(0.1, max_num=20_0000, trans=trans)
-                        gaussians.double_scaling()
-                        gaussians.reset_opacity(gaussians.get_opacity.mean())
+            elif dynamics_iter <= 0.5 * opt.iterations:
+                if dynamics_iter % 1000 == 0:
+                    gaussians.densify_and_prune(opt.densify_grad_threshold, opt.min_opacity,
+                                                scene.cameras_extent, 1000, prune_min_iters=200, trans=trans)
+                    gaussians.split_ellipsoids(0.1, max_num=20_0000, trans=trans)
+                    gaussians.double_scaling()
+                    gaussians.reset_opacity(gaussians.get_opacity.mean())
+
+            else:
+                if dynamics_iter % 1000 == 0 and dynamics_iter != opt.iterations:
+                    gaussians.densify_and_prune(opt.densify_grad_threshold, opt.min_opacity,
+                                                scene.cameras_extent, 1000, prune_min_iters=200, trans=trans)
+                    gaussians.split_ellipsoids(0.1, max_num=20_0000, trans=trans)
+                    gaussians.double_scaling()
+                    gaussians.reset_opacity(gaussians.get_opacity.mean())
 
             # Optimizer step
             if iteration <= opt.iterations:
