@@ -31,6 +31,7 @@ def build_gaussframe(gaussians=None, trans=None, time=None, gaussians_bg=None):
 
 def handle_network(pipe, gaussians_bg, gaussians, trans, time_info, background, iter_finished, lp: ModelParams,
                    min_opacity):
+    mask_manual = None
     if network_gui.conn == None:
         network_gui.try_connect()
     while network_gui.conn != None:
@@ -41,7 +42,8 @@ def handle_network(pipe, gaussians_bg, gaussians, trans, time_info, background, 
             if custom_cam != None:
                 time = time_info.get_time(frame / 100 * (lp.end_frame - lp.start_frame) + lp.start_frame)
                 if checkbox_1 is False and checkbox_2 is False:
-                    gaussframe = build_gaussframe(gaussians_bg=gaussians_bg, gaussians=gaussians, trans=trans, time=time)
+                    gaussframe = build_gaussframe(gaussians_bg=gaussians_bg, gaussians=gaussians, trans=trans,
+                                                  time=time)
                 elif checkbox_1 is False and checkbox_2 is True:
                     gaussframe = build_gaussframe(gaussians_bg=gaussians_bg)
                 elif checkbox_1 is True and checkbox_2 is False:
@@ -50,24 +52,10 @@ def handle_network(pipe, gaussians_bg, gaussians, trans, time_info, background, 
                     _gaussians: GaussianModel = copy.deepcopy(gaussians)
                     _trans = copy.deepcopy(trans)
                     _gaussians.prune_min_opacity(min_opacity, trans=_trans)
-                    if checkbox_3 is False:
-                        _gaussians.prune_color(dest_color=lp.dynamics_color, bias=slider_float_2, trans=_trans)
-                    else:
-                        _gaussians.split_ball(trans=_trans)
-                        labels = classify_ball_op(_gaussians.get_xyz, _gaussians.get_scaling.mean(dim=1),
-                                                  _gaussians._features_dc.squeeze(1), dis_thr=slider_float_1,
-                                                  color_thr=slider_float_2)
-                        unique_labels, counts = torch.unique(labels, return_counts=True)
-                        order = torch.argsort(counts).__reversed__()
-                        unique_labels = unique_labels[order]
-                        # counts = counts[order]
-
-                        dc, opacity = print_color(labels, unique_labels, target_color=lp.dynamics_color,
-                                                  color_tensor=_gaussians._features_dc.squeeze(1))
-
+                    if mask_manual is not None:
+                        opacity = np.full(_gaussians.get_opacity.shape, 0.001)  # 初始化所有点的不透明度为0.05
+                        opacity[mask_manual] = 0.05
                         _gaussians.set_opacity(value=torch.tensor(opacity, dtype=torch.float, device="cuda"))
-                        _gaussians.set_featrue_dc(
-                            new_dc=torch.tensor(dc, dtype=torch.float, device="cuda").unsqueeze(1))
 
                     gaussframe = build_gaussframe(gaussians=_gaussians, trans=_trans, time=time)
 
