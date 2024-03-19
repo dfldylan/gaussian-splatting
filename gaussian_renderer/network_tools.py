@@ -63,7 +63,7 @@ def handle_network(pipe, gaussians_bg, gaussians, trans, time_info, background, 
                 net_image_bytes = memoryview(
                     (torch.clamp(net_image, min=0, max=1.0) * 255).byte().permute(1, 2, 0).contiguous().cpu().numpy())
             network_gui.send(net_image_bytes, lp.source_path)
-            if do_training and (iter_finished or not keep_alive):
+            if do_training and (not iter_finished or not keep_alive):
                 break
         except Exception as e:
             network_gui.conn = None
