@@ -26,13 +26,17 @@ import numpy as np
 
 def trans_sets(dataset: ModelParams, opt, checkpoint, time_info: TimeSeriesInfo = None):
     with torch.no_grad():
-        gaussians = GaussianModel(dataset.sh_degree)
         scene = Scene(dataset)
-        trans = TransModel(dataset, scene.time_info, gaussians._xyz.shape[0])
+        if dataset.end_frame == -1:
+            dataset.end_frame = scene.time_info.num_frames - 1
+        gaussians = GaussianModel(dataset.sh_degree)
+        trans = TransModel(dataset, scene.time_info)
         if checkpoint:
             (model_params, trans_params, first_iter) = torch.load(checkpoint)
-            gaussians.restore(model_params, opt)
-            trans.restore(trans_params)
+            gaussians.restore(model_params, opt, position_lr_max_steps=opt.iterations)
+            trans.restore(trans_params, opt, reset_time=False)
+        else:
+            raise Exception("No chkpnt specify")
 
         if time_info is None:
             time_info = scene.time_info
@@ -47,7 +51,7 @@ def trans_sets(dataset: ModelParams, opt, checkpoint, time_info: TimeSeriesInfo 
             print('Frame {}, Time {}'.format(i, time))
             dt_xyz, dt_scaling, dt_rotation = trans(time)
             gaussian_frame = gaussians.move(dt_xyz, dt_scaling, dt_rotation)
-            np.savez(os.path.join(save_path, '{:04}.npz'.format(i)), pos=filter_gaussian(gaussian_frame))
+            np.savez(os.path.join(save_path, '{:04}.npz'.format(i)), pos=gaussian_frame.get_xyz.cpu().detach().numpy())
 
 
 def filter_gaussian(gaussian_frame: GaussianFrame):
