@@ -90,11 +90,7 @@ class OptimizationParams(ParamGroup):
         self.random_background = False
         super().__init__(parser, "Optimization Parameters")
 
-def get_combined_args(parser : ArgumentParser):
-    cmdlne_string = sys.argv[1:]
-    cfgfile_string = "Namespace()"
-    args_cmdline = parser.parse_args(cmdlne_string)
-
+def get_combined_args(args_cmdline: Namespace):
     try:
         cfgfilepath = os.path.join(args_cmdline.model_path, "cfg_args")
         print("Looking for config file in", cfgfilepath)
