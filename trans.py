@@ -58,6 +58,7 @@ def trans_sets(dataset: ModelParams, opt, pipe, checkpoint, time_info: TimeSerie
             print('Frame {}, Time {}'.format(i, time))
             dt_xyz, dt_scaling, dt_rotation = trans(time)
             gaussian_frame = gaussians.move(dt_xyz, dt_scaling, dt_rotation)
+            gaussian_frame.save_ply(os.path.join(save_path, 'ply', '{:04}.ply'.format(i)))
             np.savez(os.path.join(save_path, '{:04}.npz'.format(i)), pos=gaussian_frame.get_xyz.cpu().detach().numpy())
 
 
