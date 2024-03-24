@@ -24,55 +24,23 @@ from scene.gaussian_model import GaussianModel
 from scene.trans_model import TransModel
 
 
-def render_set(model_path, frame_index, views, gaussians, trans, pipeline, background):
-    render_path = os.path.join(model_path, "renders", str(frame_index))
-    gts_path = os.path.join(model_path, "gt", str(frame_index))
-
-    makedirs(render_path, exist_ok=True)
-    makedirs(gts_path, exist_ok=True)
-
-    dt_xyz, dt_scaling, dt_rotation = trans(views[0].time)
-    gaussians_frame = gaussians.move(dt_xyz, dt_scaling, dt_rotation)
-
-    for idx, view in enumerate(tqdm(views, desc="Rendering progress")):
-        rendering = render(view, gaussians_frame, pipeline, background)["render"]
-        gt = view.original_image[0:3, :, :]
-        torchvision.utils.save_image(rendering, os.path.join(render_path, '{0:04d}'.format(idx) + ".png"))
-        torchvision.utils.save_image(gt, os.path.join(gts_path, '{0:04d}'.format(idx) + ".png"))
-
-
-def render_sets(args, model, op, pipeline, frame_index, checkpoint):
-    # args = get_combined_args(args)
-    dataset: ModelParams = model.extract(args)
-    opt = op.extract(args)
-    pipeline: PipelineParams = pipeline.extract(args)
-    dataset.eval = True
+def render_set(pipe, frame_index, view, background, render_path, gts_path, gaussians, trans, frame_time):
     with torch.no_grad():
-        scene = Scene(dataset)
-        if dataset.end_frame == -1:
-            dataset.end_frame = scene.time_info.num_frames - 1
-        gaussians = GaussianModel(dataset.sh_degree)
-        trans = TransModel(dataset, scene.time_info)
-        if checkpoint:
-            (model_params, trans_params, first_iter) = torch.load(checkpoint)
-            gaussians.restore(model_params, opt, position_lr_max_steps=opt.iterations)
-            trans.restore(trans_params, opt, reset_time=False)
-        else:
-            raise Exception("No chkpnt specify")
+        dt_xyz, dt_scaling, dt_rotation = trans(frame_time)
+        gaussians_frame = gaussians.move(dt_xyz, dt_scaling, dt_rotation)
 
-        bg_color = [1, 1, 1] if dataset.white_background else [0, 0, 0]
-        background = torch.tensor(bg_color, dtype=torch.float32, device="cuda")
-
-        render_set(dataset.model_path, frame_index, scene.getTrainCameras(frame_index=frame_index),
-                   gaussians, trans, pipeline, background)
+        rendering = render(view, gaussians_frame, pipe, background)["render"]
+        gt = view.original_image[0:3, :, :]
+        torchvision.utils.save_image(rendering, os.path.join(render_path, '{0:04d}'.format(frame_index) + ".png"))
+        torchvision.utils.save_image(gt, os.path.join(gts_path, '{0:04d}'.format(frame_index) + ".png"))
 
 
 if __name__ == "__main__":
     # Set up command line argument parser
     parser = ArgumentParser(description="Testing script parameters")
-    model = ModelParams(parser)
+    lp = ModelParams(parser)
     op = OptimizationParams(parser)
-    pipeline = PipelineParams(parser)
+    pp = PipelineParams(parser)
     parser.add_argument("--quiet", action="store_true")
     parser.add_argument("--start_checkpoint", type=str, default=None)
     args = parser.parse_args(sys.argv[1:])
@@ -81,10 +49,30 @@ if __name__ == "__main__":
     # Initialize system state (RNG)
     safe_state(args.quiet)
 
-    from scene.dataset_readers import readNeurofluidInfo
+    opt = op.extract(args)
+    dataset: ModelParams = lp.extract(args)
+    pipe: PipelineParams = pp.extract(args)
+    dataset.eval = True
+    scene = Scene(dataset, shuffle=False)
+    if dataset.end_frame == -1:
+        dataset.end_frame = scene.time_info.num_frames - 1
+    gaussians = GaussianModel(dataset.sh_degree)
+    trans = TransModel(dataset, scene.time_info)
+    (model_params, trans_params, first_iter) = torch.load(args.start_checkpoint)
+    gaussians.restore(model_params, opt, position_lr_max_steps=opt.iterations)
+    trans.restore(trans_params, opt, reset_time=False)
+    view = scene.getTrainCameras()[0]
 
-    _ = model.extract(args)
-    num_frames = readNeurofluidInfo(_.source_path, _.white_background, _.eval).time_info.num_frames
-    model_path = args.model_path
-    for frame_index in range(num_frames):
-        render_sets(args, model, op, pipeline, frame_index, args.start_checkpoint)
+    render_path = os.path.join(dataset.model_path, "renders")
+    gts_path = os.path.join(dataset.model_path, "gt")
+    makedirs(render_path, exist_ok=True)
+    makedirs(gts_path, exist_ok=True)
+
+    bg_color = [1, 1, 1] if dataset.white_background else [0, 0, 0]
+    background = torch.tensor(bg_color, dtype=torch.float32, device="cuda")
+
+    for frame_index in range(scene.time_info.num_frames):
+        print(frame_index)
+        frame_time = scene.time_info.get_time(frame_index)
+        render_set(pipe, frame_index, background=background, render_path=render_path, gts_path=gts_path,
+                   gaussians=gaussians, trans=trans, view=view, frame_time=frame_time)

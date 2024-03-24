@@ -59,7 +59,7 @@ class ModelParams(ParamGroup):
         self._white_background = False
         self.data_device = "cuda"
         self.eval = False
-        self.timestep_x = 1  # for timestep stride
+        self.timestep_x = 1.0  # for timestep stride
 
         self.hidden_sizes = [256, 256, 256, 256]
         self.track_channel = 64
