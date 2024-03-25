@@ -9,8 +9,7 @@ class TransModel:
     def __init__(self, args: ModelParams, time_info: TimeSeriesInfo):
         self.base_time = time_info.get_time(args.end_frame)
         self.pos_encoder, dims = get_embedder(multires=4, i=1)
-        self.color_feature_dims = (args.sh_degree + 1) ** 2
-        self.mlp = MLP(args.track_channel + dims, args.hidden_sizes, 3 + 3 + 4 + 3 * self.color_feature_dims)
+        self.mlp = MLP(args.track_channel + dims, args.hidden_sizes, 3 + 4)
 
     def set_optimizer(self, training_args):
         l = [
@@ -28,11 +27,8 @@ class TransModel:
         output = self.mlp(
             torch.concat((self.feats, self.pos_encoder(torch.full(self.feats[:, :1].size(), dt_time, device='cuda'))),
                          dim=-1))
-        dt_xyz, dt_scaling, dt_rotation, dt_feature = torch.split(dt_time * output,
-                                                                  [3, 3, 4, 3 * self.color_feature_dims], dim=-1)
-        dt_feature = dt_feature.reshape([-1, self.color_feature_dims, 3])
-        dt_feature_dc, dt_feature_rest = dt_feature[:, 0:1, :], dt_feature[:, 1:, :]
-        return dt_xyz, dt_scaling, dt_rotation, 0, dt_feature_dc, dt_feature_rest  # dt_xyz, dt_scaling, dt_rotation, dt_opacity, dt_feature_dc, dt_feature_rest
+        dt_xyz, dt_rotation = torch.split(dt_time * output, [3, 4], dim=-1)
+        return dt_xyz, dt_rotation  # dt_xyz, dt_scaling, dt_rotation, dt_opacity, dt_feature_dc, dt_feature_rest
 
     def capture(self):
         return (

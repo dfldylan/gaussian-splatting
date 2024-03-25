@@ -622,10 +622,10 @@ class GaussianModel(GaussianFrame):
         return GaussianFrame(self.active_sh_degree, self.max_sh_degree, self._xyz, self._vel, self._features_dc,
                              self._features_rest, self._scaling, self._rotation, self._opacity, self._cfd)
 
-    def move(self, dt_xyz, dt_scaling, dt_rotation, dt_opacity, dt_feature_dc, dt_feature_rest) -> GaussianFrame:
+    def move(self, dt_xyz, dt_rotation) -> GaussianFrame:
         return GaussianFrame(self.active_sh_degree, self.max_sh_degree, self._xyz + dt_xyz, self._vel,
-                             self._features_dc + dt_feature_dc, self._features_rest + dt_feature_rest,
-                             self._scaling + dt_scaling, self._rotation + dt_rotation, self._opacity + dt_opacity,
+                             self._features_dc, self._features_rest,
+                             self._scaling, self._rotation + dt_rotation, self._opacity,
                              self._cfd)
 
     def move_detach(self, dt_xyz, dt_scaling, dt_rotation) -> GaussianFrame:
