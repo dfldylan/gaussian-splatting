@@ -59,7 +59,7 @@ class ModelParams(ParamGroup):
         self._white_background = False
         self.data_device = "cuda"
         self.eval = False
-        self.timestep_x = 1  # for timestep stride
+        self.timestep_x = 1.0  # for timestep stride
 
         self.hidden_sizes = [256, 256, 256, 256]
         self.track_channel = 64
@@ -123,11 +123,7 @@ class OptimizationParams(ParamGroup):
         super().__init__(parser, "Optimization Parameters")
 
 
-def get_combined_args(parser: ArgumentParser):
-    cmdlne_string = sys.argv[1:]
-    cfgfile_string = "Namespace()"
-    args_cmdline = parser.parse_args(cmdlne_string)
-
+def get_combined_args(args_cmdline: Namespace ):
     try:
         cfgfilepath = os.path.join(args_cmdline.model_path, "cfg_args")
         print("Looking for config file in", cfgfilepath)

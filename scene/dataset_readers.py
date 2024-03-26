@@ -103,6 +103,7 @@ def getNerfppNorm(cam_info):
 from multiprocessing import Pool
 from itertools import repeat
 
+
 def _process_colmap_camera(key, cam_extrinsics, cam_intrinsics, images_folder, time_step):
     sys.stdout.write('\r')
     # the exact output you're looking for:
@@ -141,6 +142,7 @@ def _process_colmap_camera(key, cam_extrinsics, cam_intrinsics, images_folder, t
         cam_info = CameraInfo(uid=uid, R=R, T=T, FovY=FovY, FovX=FovX, image=None,
                               image_path=image_path, image_name=image_name, width=width, height=height, time=0)
     return cam_info
+
 
 def readColmapCameras(cam_extrinsics, cam_intrinsics, images_folder, time_step=None):
     cam_infos = []
@@ -421,9 +423,9 @@ def readNeurofluidInfo(path, white_background, eval, extension=".png", timestep_
             readCamerasFromTransforms(sub_path, "transforms_test.json", white_background, extension))
 
     time_info: TimeSeriesInfo = handle_time(train_cam_infos + test_cam_infos)
-    if timestep_x != 1:
+    if abs(timestep_x - 1) > 1e-5:
         time_info = TimeSeriesInfo(time_info.start_time, time_info.time_step * timestep_x,
-                                   time_info.num_frames // timestep_x)
+                                   int((time_info.num_frames - 1) / timestep_x) + 1)
 
     if not eval:
         train_cam_infos.extend(test_cam_infos)
@@ -447,6 +449,7 @@ def readNeurofluidInfo(path, white_background, eval, extension=".png", timestep_
                            time_info=time_info,
                            extra={'box_info': box_info})
     return scene_info
+
 
 def gen_random_points(ply_path, num_pts=100_000):
     # Since this data set has no colmap data, we start with random points
