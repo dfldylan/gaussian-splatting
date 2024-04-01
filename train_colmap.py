@@ -186,8 +186,8 @@ def training(dataset: ModelParams, opt: OptimizationParams, pipe, checkpoint, fl
                                                  trans=trans)
 
                     if dynamics_iter % 1000 == 0 and dynamics_iter != opt.warm_iterations:
-                        gaussians.densify_and_prune(opt.densify_grad_threshold, opt.min_opacity,
-                                                    scene.cameras_extent, 1000, prune_min_iters=200, trans=trans)
+                        gaussians.densify_and_prune(opt.densify_grad_threshold, opt.min_opacity, scene.cameras_extent,
+                                                    1000, prune_min_iters=200, prune_min_T=0.5, trans=trans)
                         # gaussians.split_ellipsoids(dataset.target_radius, max_num=opt.max_num_points, trans=trans)
                         gaussians.reset_opacity()
                         if dynamics_iter % 2000 == 0:

@@ -223,9 +223,7 @@ class GaussianModel(GaussianFrame):
          self.spatial_lr_scale) = model_args
         self.training_setup(training_args, position_lr_max_steps)
         self.xyz_gradient_accum = xyz_gradient_accum
-        self.T_sum = torch.zeros_like(self.xyz_gradient_accum)
         self.denom = denom
-        self.T_count = torch.zeros_like(self.denom)
         self.optimizer.load_state_dict(opt_dict)
 
     def fixed_pose(self):
