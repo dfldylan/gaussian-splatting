@@ -115,8 +115,9 @@ def training(dataset: ModelParams, opt: OptimizationParams, pipe, checkpoint, fl
             gaussian_frame.add_extra_gaussians(gaussian_frame_dynamics)
 
         render_pkg = render(viewpoint_cam, gaussian_frame, pipe, bg)
-        image, viewspace_point_tensor, visibility_filter, radii = render_pkg["render"], render_pkg["viewspace_points"], \
-            render_pkg["visibility_filter"], render_pkg["radii"]
+        image, viewspace_point_tensor, visibility_filter, radii, T_sum, T_count = render_pkg["render"], render_pkg[
+            "viewspace_points"], \
+            render_pkg["visibility_filter"], render_pkg["radii"], render_pkg["T_sum"], render_pkg["T_count"]
 
         # Loss
         gt_image = viewpoint_cam.original_image.cuda()
