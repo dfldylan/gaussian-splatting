@@ -6,9 +6,8 @@ from scene import GaussianModel
 from gaussian_renderer import render, network_gui
 from arguments import ModelParams
 from scene.cameras import MiniCam
-from utils.tools import similarity_mask
+from utils.tools import similarity_mask, classify_mask
 from utils.sh_utils import RGB2SH
-from torch_func import classify_ball_op  # 替换为你的模块名
 
 
 def build_gaussframe(gaussians=None, trans=None, time=None, gaussians_bg=None):
@@ -32,6 +31,8 @@ def build_gaussframe(gaussians=None, trans=None, time=None, gaussians_bg=None):
 def handle_network(pipe, gaussians_bg, gaussians, trans, time_info, background, iter_finished, lp: ModelParams,
                    min_opacity):
     mask_manual = None
+    bg_op = 0.005
+    hl_op = 0.5
     if network_gui.conn == None:
         network_gui.try_connect()
     while network_gui.conn != None:
@@ -53,8 +54,8 @@ def handle_network(pipe, gaussians_bg, gaussians, trans, time_info, background, 
                     _trans = copy.deepcopy(trans)
                     _gaussians.prune_min_opacity(min_opacity, trans=_trans)
                     if mask_manual is not None:
-                        opacity = np.full(_gaussians.get_opacity.shape, 0.001)  # 初始化所有点的不透明度为0.05
-                        opacity[mask_manual] = 0.05
+                        opacity = np.full(_gaussians.get_opacity.shape, bg_op)  # 初始化所有点的不透明度为0.05
+                        opacity[mask_manual] = hl_op
                         _gaussians.set_opacity(value=torch.tensor(opacity, dtype=torch.float, device="cuda"))
 
                     gaussframe = build_gaussframe(gaussians=_gaussians, trans=_trans, time=time)

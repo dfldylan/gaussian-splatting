@@ -14,7 +14,7 @@ from os import makedirs, path
 import os
 import uuid
 from argparse import Namespace
-from arguments import ModelParams
+from arguments import ModelParams, OptimizationParams
 
 try:
     from torch.utils.tensorboard import SummaryWriter
@@ -63,7 +63,7 @@ def prepare_output_and_logger(args):
     return tb_writer
 
 
-def merge_args(dataset: ModelParams, conf):
+def merge_args(dataset: ModelParams, opt: OptimizationParams, conf):
     dataset.start_frame = conf['start_frame']
     dataset.end_frame = conf['end_frame']
     dataset.dynamics_color = [item / 256 for item in conf['rgb']]
@@ -77,4 +77,6 @@ def merge_args(dataset: ModelParams, conf):
         dataset.first_class = conf['class']
     if 'target_radius' in conf.keys():
         dataset.target_radius = conf['target_radius']
+    if 'min_opacity' in conf.keys():
+        opt.min_opacity = conf['min_opacity']
     return dataset

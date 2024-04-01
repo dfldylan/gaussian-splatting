@@ -1,4 +1,6 @@
 import torch
+import numpy as np
+from sklearn.cluster import DBSCAN
 
 
 def generate_random_bool_tensor(size, n_true):
@@ -34,9 +36,27 @@ def similarity_mask(vectors, target, threshold=0.9, ret_fixed=False):
     return mask, None
 
 
+def classify_mask(xyz, eps=0.075, min_samples=10, first_class=0):
+    # 使用DBSCAN进行聚类
+    dbscan = DBSCAN(eps=eps, min_samples=min_samples)  # eps和min_samples根据实际情况调整
+    labels = dbscan.fit_predict(xyz)
+    unique_labels, counts = np.unique(labels, return_counts=True)
+    order = np.argsort(counts)[::-1]
+    select_label = unique_labels[order[first_class]]
+    return labels == select_label
+
+
 if __name__ == '__main__':
-    # 示例
-    size = 10
-    n_true = 3
-    random_tensor = generate_random_bool_tensor(size, n_true)
-    print(random_tensor)
+    # 假设你已经有了一些PyTorch张量数据
+    # 这里我们创建一个随机张量作为示例
+    data_tensor = torch.rand(100, 2)  # 100个样本，每个样本2个特征
+
+    # 将PyTorch张量转换为NumPy数组
+    data_numpy = data_tensor.numpy()
+
+    # 使用DBSCAN进行聚类
+    dbscan = DBSCAN(eps=0.1, min_samples=10)  # eps和min_samples根据实际情况调整
+    clusters = dbscan.fit_predict(data_numpy)
+
+    # clusters变量现在包含每个数据点的簇标签
+    print(clusters)

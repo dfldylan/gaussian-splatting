@@ -21,9 +21,7 @@ from simple_knn._C import distCUDA2
 from utils.graphics_utils import BasicPointCloud
 from utils.general_utils import strip_symmetric, build_scaling_rotation
 from scene.trans_model import TransModel
-from torch_func import classify_ball_op  # 替换为你的模块名
-from utils.tools import similarity_mask
-from utils.tools import generate_random_bool_tensor
+from utils.tools import similarity_mask, generate_random_bool_tensor, classify_mask
 
 
 class GaussianFrame:
@@ -331,6 +329,7 @@ class GaussianModel(GaussianFrame):
                 return lr
 
     def reset_opacity(self, value=0.01):
+        value = np.clip(value, a_max=0.999, a_min=0.001)
         opacities_new = inverse_sigmoid(torch.min(self.get_opacity, torch.ones_like(self.get_opacity) * value))
         optimizable_tensors = self.replace_tensor_to_optimizer(opacities_new, "opacity")
         self._opacity = optimizable_tensors["opacity"]
@@ -510,6 +509,8 @@ class GaussianModel(GaussianFrame):
     def split_ellipsoids(self, target_radius=None, max_num=200000, N=2, trans=None):
         threshold = target_radius
         selected_pts_mask = torch.any(self.get_scaling > threshold, dim=1)
+        if selected_pts_mask.sum() < 1:
+            return
         if self.get_num + selected_pts_mask.sum() * (N - 1) > max_num:
             self.prune_points_random(self.get_num + selected_pts_mask.sum() * (N - 1) - max_num, trans=trans)
             selected_pts_mask = torch.any(self.get_scaling > threshold, dim=1)
@@ -633,14 +634,10 @@ class GaussianModel(GaussianFrame):
         opacity_mask = (self.get_opacity < min_opacity).squeeze()
         self.prune_points(opacity_mask, trans=trans)
 
-    def prune_district(self, dis_thr=0.075, color_thr=0.65, first_class=0, trans=None):
-        labels = classify_ball_op(self.get_xyz, self.get_scaling.mean(dim=1), self._features_dc.squeeze(1), dis_thr,
-                                  color_thr)
-        unique_labels, counts = torch.unique(labels, return_counts=True)
-        order = torch.argsort(counts)[::-1]
-        select_label = unique_labels[order[first_class]]
-        mask = labels == select_label
-        self.prune_points(~mask, trans=trans)
+    def prune_district(self, eps=0.075, min_samples=10, first_class=0, trans=None):
+        xyz = self.get_xyz.detach().cpu().numpy()
+        mask = classify_mask(xyz, eps=eps, min_samples=min_samples, first_class=first_class)
+        self.prune_points(~torch.tensor(mask, dtype=torch.bool, device='cuda'), trans=trans)
 
     def split_ball(self, target_radius=0.01, max_num=1000000, trans: TransModel = None):
         """
@@ -695,11 +692,6 @@ class GaussianModel(GaussianFrame):
                   torch.repeat_interleave(self.get_xyz[selected_pts_mask], N, dim=0)
 
         return new_xyz
-
-    def split_prune_district(self, min_opacity=0.005, dis_thr=0.075, color_thr=0.65, first_class=0, trans=None):
-        self.prune_min_opacity(min_opacity, trans=trans)
-        self.split_ball(trans=trans)
-        self.prune_district(dis_thr=dis_thr, color_thr=color_thr, first_class=first_class, trans=trans)
 
     def prune_color(self, dest_color, bias=0.65, trans=None):
         if dest_color is None:

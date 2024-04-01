@@ -90,7 +90,7 @@ class PipelineParams(ParamGroup):
 
 class OptimizationParams(ParamGroup):
     def __init__(self, parser):
-        self.bg_iterations = 0
+        self.bg_iterations = 1_0000
         self.warm_iterations = 1_0000
         self.dynamics_iterations = 15_0000
         self.iterations = 30_0000

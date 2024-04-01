@@ -12,7 +12,6 @@
 import os
 import sys
 import torch
-import yaml
 from random import choice
 
 from utils.loss_utils import l1_loss, ssim, density_loss, aniso_loss, vol_loss, opacity_loss, feature_loss
@@ -25,13 +24,11 @@ from tqdm import tqdm
 from argparse import ArgumentParser
 from arguments import ModelParams, PipelineParams, OptimizationParams
 from gaussian_renderer.network_tools import handle_network
-from utils.system_utils import merge_args, prepare_output_and_logger
+from utils.system_utils import prepare_output_and_logger
 
 
 def training(dataset: ModelParams, opt: OptimizationParams, pipe, checkpoint):
     opt.bg_iterations = 0  # NeuroFluid dataset does not have bg
-    if os.path.exists(os.path.join(dataset.source_path, 'fluid.yml')):
-        merge_args(dataset, yaml.safe_load(open(os.path.join(dataset.source_path, 'fluid.yml')))[args.fluid_setup])
 
     first_iter = 0
     _ = prepare_output_and_logger(dataset)
@@ -67,14 +64,17 @@ def training(dataset: ModelParams, opt: OptimizationParams, pipe, checkpoint):
 
         bg = torch.rand((3), device="cuda") if opt.random_background else background
 
-        if iteration > opt.dynamics_iterations:
-            gaussians.update_learning_rate(iteration - opt.dynamics_iterations)
-        if iteration > opt.warm_iterations:
-            start_frame = int(dataset.end_frame - min(1, iteration / opt.dynamics_iterations) * (
-                    dataset.end_frame - dataset.start_frame))
+        if iteration <= opt.warm_iterations:
+            frame_id = dataset.end_frame
+        elif iteration <= opt.dynamics_iterations:
+            start_frame = int(dataset.end_frame -
+                              (iteration / opt.dynamics_iterations) * (dataset.end_frame - dataset.start_frame))
             frame_id = choice(range(start_frame, dataset.end_frame + 1))
         else:
-            frame_id = dataset.end_frame
+            gaussians.update_learning_rate(iteration - opt.dynamics_iterations)
+            start_frame = dataset.start_frame
+            frame_id = choice(range(start_frame, dataset.end_frame + 1))
+
         viewpoint_stack = scene.getTrainCameras(frame_index=frame_id)
         viewpoint_cam: Camera = choice(viewpoint_stack)
         dt_xyz, dt_scaling, dt_rotation = trans(viewpoint_cam.time)
@@ -89,11 +89,11 @@ def training(dataset: ModelParams, opt: OptimizationParams, pipe, checkpoint):
         gt_image = viewpoint_cam.original_image.cuda()
         Ll1 = l1_loss(image, gt_image)
         loss = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * (1.0 - ssim(image, gt_image))
+        loss = loss + opt.lambda_dens * density_loss(gaussian_frame_dynamics.get_xyz)
         loss = loss + opt.lambda_aniso * aniso_loss(gaussian_frame_dynamics.get_scaling)
         loss = loss + opt.lambda_vol * vol_loss(gaussian_frame_dynamics.get_scaling)
         loss = loss + opt.lambda_opacity * opacity_loss(gaussians.get_opacity)
-        loss = loss + opt.lambda_feats * feature_loss(gaussians._features_dc)
-        loss = loss + opt.lambda_dens * density_loss(gaussian_frame_dynamics.get_xyz)
+        loss = loss + opt.lambda_feats * feature_loss(gaussians._features_dc.squeeze(1))
         loss.backward()
         iter_end.record()
 
@@ -108,9 +108,10 @@ def training(dataset: ModelParams, opt: OptimizationParams, pipe, checkpoint):
 
             # Keep track of max radii in image-space for pruning
             viewspace_point_tensor_grad = viewspace_point_tensor.grad
-            gaussians.max_radii2D[visibility_filter] = torch.max(gaussians.max_radii2D[visibility_filter],
-                                                                 radii[visibility_filter])
-            gaussians.add_densification_stats(viewspace_point_tensor_grad, visibility_filter)
+            if visibility_filter.sum().cpu().numpy() != 0:
+                gaussians.max_radii2D[visibility_filter] = torch.max(gaussians.max_radii2D[visibility_filter],
+                                                                     radii[visibility_filter])
+                gaussians.add_densification_stats(viewspace_point_tensor_grad, visibility_filter)
 
             if iteration <= opt.warm_iterations:
                 if iteration % 1000 == 0 and iteration != opt.warm_iterations:
