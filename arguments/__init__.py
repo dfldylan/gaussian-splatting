@@ -69,7 +69,7 @@ class ModelParams(ParamGroup):
         self.dynamics_color = None
         self.color_bias = 0.65
         self.max_radii2D = 20
-        self.eps = 0.075
+        self.eps = 1
         self.first_class = 0
 
         super().__init__(parser, "Loading Parameters", sentinel)
@@ -110,10 +110,10 @@ class OptimizationParams(ParamGroup):
         self.track_mlp_lr = 0.0001
 
         self.lambda_dssim = 0.2
-        self.lambda_dens = 0.1
+        self.lambda_dens = 1
         self.lambda_aniso = 0.1
         self.lambda_vol = 0.1
-        self.lambda_opacity = 0.01
+        self.lambda_opacity = 1
         self.lambda_feats = 1
 
         self.densify_grad_threshold = 0.001

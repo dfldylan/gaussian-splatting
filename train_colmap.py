@@ -127,14 +127,16 @@ def training(dataset: ModelParams, opt: OptimizationParams, pipe, checkpoint, fl
             loss = (loss + opt.lambda_feats * feature_loss(gaussians._features_dc.squeeze(1),
                                                            mean=RGB2SH(torch.Tensor(dataset.dynamics_color).cuda())))
             if iteration <= opt.bg_iterations + opt.warm_iterations:
+                pass
                 # loss = loss + 0.01 * opt.lambda_aniso * aniso_loss(gaussian_frame_dynamics.get_scaling)
                 # loss = loss + 0.01 * opt.lambda_vol * vol_loss(gaussian_frame_dynamics.get_scaling)
-                loss = loss + 0.1 * opt.lambda_dens * density_loss(gaussian_frame_dynamics.get_xyz)
+                # loss = loss + 0.1 * opt.lambda_dens * density_loss(gaussian_frame_dynamics.get_xyz)
             elif iteration <= opt.dynamics_iterations:
+                pass
                 # loss = loss + 0.1 * opt.lambda_opacity * opacity_loss(gaussians.get_opacity)
                 # loss = loss + 0.1 * opt.lambda_aniso * aniso_loss(gaussian_frame_dynamics.get_scaling)
                 # loss = loss + 0.1 * opt.lambda_vol * vol_loss(gaussian_frame_dynamics.get_scaling)
-                loss = loss + 0.1 * opt.lambda_dens * density_loss(gaussian_frame_dynamics.get_xyz)
+                # loss = loss + 0.1 * opt.lambda_dens * density_loss(gaussian_frame_dynamics.get_xyz)
             else:
                 loss = loss + opt.lambda_opacity * opacity_loss(gaussians.get_opacity)
                 loss = loss + opt.lambda_aniso * aniso_loss(gaussian_frame_dynamics.get_scaling)
@@ -173,6 +175,8 @@ def training(dataset: ModelParams, opt: OptimizationParams, pipe, checkpoint, fl
                 visibility_filter = visibility_filter[-gaussians.get_num:]
                 radii = radii[-gaussians.get_num:]
                 viewspace_point_tensor_grad = viewspace_point_tensor.grad[-gaussians.get_num:]
+                T_sum = T_sum[-gaussians.get_num:].unsqueeze(-1)
+                T_count = T_count[-gaussians.get_num:].unsqueeze(-1)
                 if visibility_filter.sum().cpu().numpy() != 0:
                     gaussians.max_radii2D[visibility_filter] = torch.max(gaussians.max_radii2D[visibility_filter],
                                                                          radii[visibility_filter])
@@ -187,8 +191,8 @@ def training(dataset: ModelParams, opt: OptimizationParams, pipe, checkpoint, fl
 
                     if dynamics_iter % 1000 == 0 and dynamics_iter != opt.warm_iterations:
                         gaussians.densify_and_prune(opt.densify_grad_threshold, opt.min_opacity, scene.cameras_extent,
-                                                    1000, prune_min_iters=200, prune_min_T=0.5, trans=trans)
-                        # gaussians.split_ellipsoids(dataset.target_radius, max_num=opt.max_num_points, trans=trans)
+                                                    1000, prune_min_iters=200, trans=trans)
+                        gaussians.split_ellipsoids(dataset.target_radius, max_num=opt.max_num_points, trans=trans)
                         gaussians.reset_opacity()
                         if dynamics_iter % 2000 == 0:
                             gs_bg.reset_opacity()
@@ -198,8 +202,8 @@ def training(dataset: ModelParams, opt: OptimizationParams, pipe, checkpoint, fl
 
                 elif iteration <= opt.dynamics_iterations:
                     if iteration % 1000 == 0:
-                        gaussians.densify_and_prune(opt.densify_grad_threshold, opt.min_opacity,
-                                                    scene.cameras_extent, 1000, prune_min_iters=500, trans=trans)
+                        gaussians.densify_and_prune(opt.densify_grad_threshold, opt.min_opacity, scene.cameras_extent,
+                                                    1000, prune_min_iters=500, prune_min_T=0.1, trans=trans)
                         gaussians.split_ellipsoids(dataset.target_radius, max_num=opt.max_num_points, trans=trans)
                         gaussians.double_scaling(multiplier=1.1)
                         if iteration % 5000 == 0:
