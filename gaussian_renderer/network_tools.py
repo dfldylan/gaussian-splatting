@@ -4,7 +4,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from scene import GaussianModel
 from gaussian_renderer import render, network_gui
-from arguments import ModelParams
+from arguments import ModelParams,OptimizationParams
 from scene.cameras import MiniCam
 from utils.tools import similarity_mask, classify_mask
 from utils.sh_utils import RGB2SH
@@ -29,7 +29,8 @@ def build_gaussframe(gaussians=None, trans=None, time=None, gaussians_bg=None):
 
 
 def handle_network(pipe, gaussians_bg, gaussians, trans, time_info, background, iter_finished, lp: ModelParams,
-                   min_opacity):
+                   opt:OptimizationParams):
+    min_opacity = opt.min_opacity
     mask_manual = None
     bg_op = 0.005
     hl_op = 0.5
@@ -41,7 +42,7 @@ def handle_network(pipe, gaussians_bg, gaussians, trans, time_info, background, 
             custom_cam: MiniCam
             custom_cam, do_training, pipe.convert_SHs_python, pipe.compute_cov3D_python, keep_alive, scaling_modifer, frame, checkbox_1, checkbox_2, checkbox_3, slider_float_1, slider_float_2 = network_gui.receive()
             if custom_cam != None:
-                time = time_info.get_time(frame / 100 * (lp.end_frame - lp.start_frame) + lp.start_frame)
+                time = time_info.get_time(frame / 100 * (opt.end_frame - opt.start_frame) + opt.start_frame)
                 if checkbox_1 is False and checkbox_2 is False:
                     gaussframe = build_gaussframe(gaussians_bg=gaussians_bg, gaussians=gaussians, trans=trans,
                                                   time=time)

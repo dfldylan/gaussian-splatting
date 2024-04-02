@@ -63,20 +63,17 @@ def prepare_output_and_logger(args):
     return tb_writer
 
 
-def merge_args(dataset: ModelParams, opt: OptimizationParams, conf):
-    dataset.start_frame = conf['start_frame']
-    dataset.end_frame = conf['end_frame']
+def merge_args(dataset: ModelParams, opt: OptimizationParams, conf,fluid_setup):
+    opt.start_frame = conf[fluid_setup]['start_frame']
+    opt.end_frame = conf[fluid_setup]['end_frame']
+
+    conf = conf[0]
+    opt.static_start = conf['start_frame']
+    opt.static_end = conf['end_frame']
+
     dataset.dynamics_color = [item / 256 for item in conf['rgb']]
-    if 'max_radii2D' in conf.keys():
-        dataset.max_radii2D = conf['max_radii2D']
-    if 'bias' in conf.keys():
-        dataset.color_bias = conf['bias']
-    if 'eps' in conf.keys():
-        dataset.eps = conf['eps']
-    if 'class' in conf.keys():
-        dataset.first_class = conf['class']
-    if 'target_radius' in conf.keys():
-        dataset.target_radius = conf['target_radius']
-    if 'min_opacity' in conf.keys():
-        opt.min_opacity = conf['min_opacity']
+    dataset.target_radius = conf['target_radius']
+    opt.min_opacity = conf['min_opacity']
+    opt.eps = conf['eps']
+
     return dataset

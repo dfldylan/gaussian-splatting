@@ -6,8 +6,8 @@ from utils.position_encoding import get_embedder
 
 
 class TransModel:
-    def __init__(self, args: ModelParams, time_info: TimeSeriesInfo):
-        self.base_time = time_info.get_time(args.end_frame)
+    def __init__(self, args: ModelParams, time_info: TimeSeriesInfo, base_time):
+        self.base_time = time_info.get_time(base_time)
         self.pos_encoder, dims = get_embedder(multires=4, i=1)
         self.mlp = MLP(args.track_channel + dims, args.hidden_sizes, 3 + 3 + 4)
 

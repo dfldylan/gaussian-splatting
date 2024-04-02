@@ -37,7 +37,7 @@ def training(dataset: ModelParams, opt: OptimizationParams, pipe, checkpoint):
         dataset.end_frame = scene.time_info.num_frames - 1
 
     gaussians = GaussianModel(dataset.sh_degree)
-    trans = TransModel(dataset, scene.time_info)
+    trans = TransModel(dataset, scene.time_info,opt.end_frame)
 
     if checkpoint:
         (model_params, trans_params, first_iter) = torch.load(checkpoint)
@@ -59,7 +59,7 @@ def training(dataset: ModelParams, opt: OptimizationParams, pipe, checkpoint):
     first_iter += 1
     for iteration in range(first_iter, opt.iterations + 1):
         handle_network(pipe, None, gaussians, trans, scene.time_info, background,
-                       (iteration == int(opt.iterations)), dataset, opt.min_opacity)
+                       (iteration == int(opt.iterations)), dataset, opt)
         iter_start.record()
 
         bg = torch.rand((3), device="cuda") if opt.random_background else background

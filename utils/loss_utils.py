@@ -90,12 +90,17 @@ def density_loss(xyz, h=0.3, k=64):
 
 
 def opacity_loss(opacity):
-    loss = (opacity - opacity.mean()).square().mean()
+    loss = (opacity - opacity.mean()).abs().mean()
     return loss
 
 
 def feature_loss(features, mean=None):
     if mean is None:
         mean = features.mean(0, keepdim=True)
-    loss = (features - mean).square().mean()
+    loss = (features - mean).abs().mean()
+    return loss
+
+
+def position_loss(xyz):
+    loss = (xyz - xyz.mean(dim=0)).abs().mean()
     return loss

@@ -64,12 +64,9 @@ class ModelParams(ParamGroup):
         self.hidden_sizes = [256, 256, 256, 256]
         self.track_channel = 64
         self.target_radius = 0.1
-        self.start_frame = 0
-        self.end_frame = -1
         self.dynamics_color = None
         self.color_bias = 0.65
         self.max_radii2D = 20
-        self.eps = 1
         self.first_class = 0
 
         super().__init__(parser, "Loading Parameters", sentinel)
@@ -106,7 +103,7 @@ class OptimizationParams(ParamGroup):
         self.scaling_lr = 0.005
         self.rotation_lr = 0.001
         self.percent_dense = 0.01
-        self.track_feat_lr = 0.001
+        self.track_feat_lr = 0.01
         self.track_mlp_lr = 0.0001
 
         self.lambda_dssim = 0.2
@@ -120,6 +117,13 @@ class OptimizationParams(ParamGroup):
         self.random_background = False
         self.max_num_points = 20_0000
         self.min_opacity = 0.005
+
+        self.start_frame = 0
+        self.end_frame = 0
+        self.static_start = 0
+        self.static_end = 0
+        self.eps = 1
+
         super().__init__(parser, "Optimization Parameters")
 
 
