@@ -90,7 +90,7 @@ class OptimizationParams(ParamGroup):
         self.bg_iterations = 1_0000
         self.warm_iterations = 1_0000
         self.dynamics_iterations = 15_0000
-        self.iterations = 30_0000
+        self.iterations = 20_0000
         self.density_from_iter = 0
 
         self.position_lr_init = 0.00016
@@ -98,7 +98,7 @@ class OptimizationParams(ParamGroup):
         self.position_lr_delay_mult = 0.01
         self.velocity_lr_init = 0.00008
         self.feature_lr = 0.0025
-        self.opacity_lr = 0.05
+        self.opacity_lr = 0.01
         self.cfd_lr = 0.05
         self.scaling_lr = 0.005
         self.rotation_lr = 0.001
@@ -107,11 +107,11 @@ class OptimizationParams(ParamGroup):
         self.track_mlp_lr = 0.0001
 
         self.lambda_dssim = 0.2
-        self.lambda_dens = 1
+        self.lambda_dens = 0.1
         self.lambda_aniso = 0.1
         self.lambda_vol = 0.1
-        self.lambda_opacity = 1
-        self.lambda_feats = 1
+        self.lambda_opacity = 0.1
+        self.lambda_feats = 0.1
 
         self.densify_grad_threshold = 0.001
         self.random_background = False

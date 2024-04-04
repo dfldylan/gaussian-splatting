@@ -100,8 +100,11 @@ def training(dataset: ModelParams, opt: OptimizationParams, pipe, checkpoint, fl
                 frame_id = choice(range(start_frame, opt.end_frame + 1))
             else:
                 gaussians.update_learning_rate(iteration - opt.dynamics_iterations)
-                start_frame = opt.start_frame
-                frame_id = choice(range(start_frame, opt.end_frame + 1))
+                if iteration % 100 == 0:
+                    frame_id = opt.end_frame
+                else:
+                    start_frame = opt.start_frame
+                    frame_id = choice(range(start_frame, opt.end_frame + 1))
 
             viewpoint_stack = scene.getTrainCameras(frame_index=frame_id)
             viewpoint_cam: Camera = choice(viewpoint_stack)
@@ -119,24 +122,24 @@ def training(dataset: ModelParams, opt: OptimizationParams, pipe, checkpoint, fl
         Ll1 = l1_loss(image, gt_image)
         loss = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * (1.0 - ssim(image, gt_image))
         if iteration > opt.bg_iterations:
-            loss = (loss + opt.lambda_feats * feature_loss(gaussians._features_dc.squeeze(1),
-                                                           mean=RGB2SH(torch.Tensor(dataset.dynamics_color).cuda())))
             if iteration <= opt.bg_iterations + opt.warm_iterations:
-                pass
-                # loss = loss + 0.01 * opt.lambda_aniso * aniso_loss(gaussian_frame_dynamics.get_scaling)
-                # loss = loss + 0.01 * opt.lambda_vol * vol_loss(gaussian_frame_dynamics.get_scaling)
-                # loss = loss + 0.1 * opt.lambda_dens * density_loss(gaussian_frame_dynamics.get_xyz)
+                loss = (loss + opt.lambda_feats * feature_loss(gaussians._features_dc.squeeze(1),
+                                                               mean=RGB2SH(
+                                                                   torch.Tensor(dataset.dynamics_color).cuda())))
             elif iteration <= opt.dynamics_iterations:
+                loss = (loss + opt.lambda_feats * feature_loss(gaussians._features_dc.squeeze(1),
+                                                               mean=RGB2SH(
+                                                                   torch.Tensor(dataset.dynamics_color).cuda())))
                 loss = loss + 0.01 * position_loss(gaussians.get_xyz)
-                # loss = loss + 0.1 * opt.lambda_opacity * opacity_loss(gaussians.get_opacity)
-                # loss = loss + 0.1 * opt.lambda_aniso * aniso_loss(gaussian_frame_dynamics.get_scaling)
-                # loss = loss + 0.1 * opt.lambda_vol * vol_loss(gaussian_frame_dynamics.get_scaling)
-                # loss = loss + 0.1 * opt.lambda_dens * density_loss(gaussian_frame_dynamics.get_xyz)
             else:
-                loss = loss + opt.lambda_opacity * opacity_loss(gaussians.get_opacity)
-                loss = loss + opt.lambda_aniso * aniso_loss(gaussian_frame_dynamics.get_scaling)
-                loss = loss + opt.lambda_vol * vol_loss(gaussian_frame_dynamics.get_scaling)
-                loss = loss + opt.lambda_dens * density_loss(gaussian_frame_dynamics.get_xyz)
+                loss = (loss + opt.lambda_feats * feature_loss(gaussians._features_dc.squeeze(1), mean=RGB2SH(
+                    torch.Tensor(dataset.dynamics_color).cuda()), l=2))
+                # loss = loss + opt.lambda_opacity * opacity_loss(gaussians.get_opacity)
+                # loss = loss + opt.lambda_aniso * aniso_loss(gaussian_frame_dynamics.get_scaling)
+                # loss = loss + 0.5 * opt.lambda_vol * vol_loss(gaussian_frame_dynamics.get_scaling)
+                loss = loss + opt.lambda_dens * density_loss(gaussian_frame_dynamics.get_xyz, k=16)
+                loss = loss + 0.01 * position_loss(gaussian_frame_dynamics.get_xyz, l=1)
+
         loss.backward()
 
         iter_end.record()
@@ -208,11 +211,15 @@ def training(dataset: ModelParams, opt: OptimizationParams, pipe, checkpoint, fl
 
                 else:
                     if iteration % 1000 == 0 and iteration != opt.iterations:
+                        gaussians.prune_points((torch.vstack([gaussians.get_scaling[:,(0,2)].prod(1),gaussians.get_scaling[:,(0,1)].prod(1),gaussians.get_scaling[:,(1,2)].prod(1)])>1e-2).any(0), trans=trans)
                         gaussians.densify_and_prune(opt.densify_grad_threshold, opt.min_opacity,
-                                                    scene.cameras_extent, 1000, prune_min_iters=200, trans=trans)
+                                                    scene.cameras_extent, 5000, prune_min_iters=500, prune_min_T=0.005,
+                                                    trans=trans)
                         gaussians.split_ellipsoids(dataset.target_radius, max_num=opt.max_num_points, trans=trans)
-                        # gaussians.double_scaling()
-                        # gaussians.reset_opacity(gaussians.get_opacity.mean())
+                        # gaussians.double_scaling(multiplier=1.1)
+                        if iteration % 5000 == 0:
+                            gaussians.reset_opacity()
+                            gs_bg.reset_opacity()
 
             # Optimizer step
             if iteration <= opt.iterations:

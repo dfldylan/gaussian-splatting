@@ -71,6 +71,7 @@ def _ssim(img1, img2, window, window_size, channel, size_average=True):
 
 
 def aniso_loss(scaling: torch.Tensor):
+    scaling = scaling + 1e-5
     mean = torch.pow(torch.prod(scaling, dim=1, keepdim=True), 1 / 3)
     loss = (scaling / mean - 1).square().mean()
     return loss
