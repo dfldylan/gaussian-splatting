@@ -94,13 +94,23 @@ def opacity_loss(opacity):
     return loss
 
 
-def feature_loss(features, mean=None):
+def feature_loss(features, mean=None, l=1):
     if mean is None:
         mean = features.mean(0, keepdim=True)
-    loss = (features - mean).abs().mean()
+    if l == 1:
+        loss = (features - mean).abs().mean()
+    elif l == 2:
+        loss = (features - mean).square().mean()
+    else:
+        raise Exception(f'error l: {l}')
     return loss
 
 
-def position_loss(xyz):
-    loss = (xyz - xyz.mean(dim=0)).abs().mean()
+def position_loss(xyz, l=1):
+    if l == 1:
+        loss = (xyz - xyz.mean(dim=0)).abs().mean()
+    elif l == 2:
+        loss = (xyz - xyz.mean(dim=0)).square().mean()
+    else:
+        raise Exception(f'error l: {l}')
     return loss
