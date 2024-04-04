@@ -690,21 +690,16 @@ class GaussianModel(GaussianFrame):
         self.prune_points(prune_filter, trans)
 
     def cal_split_xyz(self, selected_pts_mask, N):
-        # 检查split_num的类型来决定处理方式
-        if isinstance(N, int):
-            N = torch.full((selected_pts_mask.sum(),), N, device="cuda")
-
         # 构建旋转矩阵和标准差，这部分对两种情况都是通用的
-        rots = torch.repeat_interleave(build_rotation(self._rotation[selected_pts_mask]), N, dim=0)
-        stds = torch.repeat_interleave(self.get_scaling[selected_pts_mask], N, dim=0)
+        rots = build_rotation(self._rotation[selected_pts_mask]).repeat(N,1,1)
+        stds = self.get_scaling[selected_pts_mask].repeat(N,1)
 
         # 生成均值为0的正态分布样本
         means = torch.zeros((stds.size(0), 3), device="cuda")
         samples = torch.normal(mean=means, std=stds)
 
         # 计算新的坐标点
-        new_xyz = torch.bmm(rots, samples.unsqueeze(-1)).squeeze(-1) + \
-                  torch.repeat_interleave(self.get_xyz[selected_pts_mask], N, dim=0)
+        new_xyz = torch.bmm(rots, samples.unsqueeze(-1)).squeeze(-1)+ self.get_xyz[selected_pts_mask].repeat(N, 1)
 
         return new_xyz
 
