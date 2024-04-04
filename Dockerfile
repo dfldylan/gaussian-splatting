@@ -29,3 +29,4 @@ RUN apt-get clean \
 
 EXPOSE 22 6009 8888
 VOLUME /workspace
+CMD ["sh", "-c", "service ssh start && /miniconda/envs/gaussian_splatting/bin/jupyter lab --ip=0.0.0.0 --no-browser --allow-root --notebook-dir=/workspace"]
