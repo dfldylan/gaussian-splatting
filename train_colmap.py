@@ -163,7 +163,7 @@ def training(dataset: ModelParams, opt: OptimizationParams, pipe, checkpoint, fl
 
                     if iteration > 500 and iteration % 100 == 0:
                         gs_bg.densify_and_prune(opt.densify_grad_threshold, opt.min_opacity, scene.cameras_extent,
-                                                prune_min_iters=30)
+                                                prune_min_iters=10)
 
                     if iteration % 2_000 == 0 or (dataset.white_background and iteration == 500):
                         gs_bg.reset_opacity()
@@ -189,7 +189,7 @@ def training(dataset: ModelParams, opt: OptimizationParams, pipe, checkpoint, fl
 
                     if dynamics_iter % 1000 == 0 and dynamics_iter != opt.warm_iterations:
                         gaussians.densify_and_prune(opt.densify_grad_threshold, opt.min_opacity, scene.cameras_extent,
-                                                    1000, prune_min_iters=200, prune_min_T=0.1, trans=trans)
+                                                    None, prune_min_iters=200, prune_min_T=0.1, trans=trans)
                         gaussians.split_ellipsoids(dataset.target_radius, max_num=opt.max_num_points, trans=trans)
                         gaussians.reset_opacity()
                         if dynamics_iter % 2000 == 0:
@@ -200,6 +200,7 @@ def training(dataset: ModelParams, opt: OptimizationParams, pipe, checkpoint, fl
 
                 elif iteration <= opt.dynamics_iterations:
                     if iteration % 1000 == 0:
+                        gaussians.prune_points((torch.vstack([gaussians.get_scaling[:,(0,2)].prod(1),gaussians.get_scaling[:,(0,1)].prod(1),gaussians.get_scaling[:,(1,2)].prod(1)])>1e-2).any(0), trans=trans)
                         gaussians.densify_and_prune(opt.densify_grad_threshold, opt.min_opacity, scene.cameras_extent,
                                                     None, prune_min_iters=500, prune_min_T=0.1, trans=trans)
                         gaussians.split_ellipsoids(dataset.target_radius, max_num=opt.max_num_points, trans=trans)
