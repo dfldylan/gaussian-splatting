@@ -14,6 +14,7 @@ import sys
 import torch
 import yaml
 from random import choice
+import json
 
 from utils.loss_utils import l1_loss, ssim, density_loss, aniso_loss, vol_loss, opacity_loss, feature_loss
 from gaussian_renderer import render, network_gui
@@ -28,7 +29,7 @@ from gaussian_renderer.network_tools import handle_network
 from utils.system_utils import merge_args, prepare_output_and_logger
 
 
-def training(dataset: ModelParams, opt: OptimizationParams, pipe, checkpoint):
+def training(dataset: ModelParams, opt: OptimizationParams, pipe, checkpoint, ply_frame):
     opt.bg_iterations = 0  # NeuroFluid dataset does not have bg
     if os.path.exists(os.path.join(dataset.source_path, 'fluid.yml')):
         merge_args(dataset, yaml.safe_load(open(os.path.join(dataset.source_path, 'fluid.yml')))[args.fluid_setup])
@@ -60,8 +61,9 @@ def training(dataset: ModelParams, opt: OptimizationParams, pipe, checkpoint):
     progress_bar = tqdm(range(0, opt.iterations), desc="Training progress", initial=first_iter)
     first_iter += 1
     for iteration in range(first_iter, opt.iterations + 1):
-        handle_network(pipe, None, gaussians, trans, scene.time_info, background,
-                       (iteration <= int(opt.iterations)), dataset, opt.min_opacity)
+        # handle_network(pipe, None, gaussians, trans, scene.time_info, background,
+        #                (iteration <= int(opt.iterations)), dataset, opt.min_opacity)
+
         iter_start.record()
 
         bg = torch.rand((3), device="cuda") if opt.random_background else background
@@ -75,10 +77,6 @@ def training(dataset: ModelParams, opt: OptimizationParams, pipe, checkpoint):
             if dynamics_iter % 1000 == 0:
                 gaussians.oneupSHdegree()
             frame_id = dataset.end_frame
-        elif dynamics_iter <= 0.5 * opt.iterations:
-            start_frame = int(dataset.end_frame - (dataset.end_frame - dataset.start_frame) * dynamics_iter / (
-                    0.5 * opt.iterations))
-            frame_id = choice(range(start_frame, dataset.end_frame + 1))
         else:
             start_frame = dataset.start_frame
             frame_id = choice(range(start_frame, dataset.end_frame + 1))
@@ -101,7 +99,7 @@ def training(dataset: ModelParams, opt: OptimizationParams, pipe, checkpoint):
         Ll1 = l1_loss(image, gt_image)  # rgb
         loss_pic = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * (1.0 - ssim(image, gt_image))
         if dynamics_iter <= opt.warm_iterations:
-            loss_gau = loss = loss_pic + opt.lambda_opacity * opacity_loss(gaussian_frame.get_opacity) + \
+            loss_gau = loss_pic + opt.lambda_opacity * opacity_loss(gaussian_frame.get_opacity) + \
                               10 * opt.lambda_dens * density_loss(gaussian_frame.get_xyz) + \
                               opt.lambda_vol * vol_loss(gaussian_frame.get_scaling) + \
                               opt.lambda_aniso * aniso_loss(gaussian_frame.get_scaling)
@@ -122,7 +120,7 @@ def training(dataset: ModelParams, opt: OptimizationParams, pipe, checkpoint):
 
         with torch.no_grad():
             # Progress bar
-            ema_loss_for_log = 0.4 * loss.item() + 0.6 * ema_loss_for_log
+            ema_loss_for_log = 0.4 * loss_gau.item() + 0.6 * ema_loss_for_log
             if iteration % 100 == 0:
                 progress_bar.set_postfix({"Loss": f"{ema_loss_for_log:.{7}f}"})
                 progress_bar.update(100)
@@ -176,6 +174,23 @@ def training(dataset: ModelParams, opt: OptimizationParams, pipe, checkpoint):
                 torch.save((gaussians.capture(), trans.capture(), iteration),
                            scene.model_path + "/chkpnt" + str(iteration) + ".pth")
 
+                # save ply
+                save_path = os.path.join(scene.model_path, "point_cloud/iteration_{}".format(iteration))
+                os.makedirs(save_path, exist_ok=True)
+
+                json.dump(scene.time_info._asdict(), open(os.path.join(save_path, 'time_info.json'), 'w'))
+
+                for i in range(0, scene.time_info.num_frames, 10):
+                    time = scene.time_info.start_time + i * scene.time_info.time_step
+                    # print('Frame {}, Time {}'.format(i, time))
+                    dt_xyz, dt_rotation = trans(time)
+                    gaussian_frame = gaussians.move(dt_xyz, dt_rotation)
+                    if i == ply_frame:
+                        gaussian_frame.save_ply(os.path.join(save_path, 'point_cloud.ply'))
+                    else:
+                        gaussian_frame.save_ply(os.path.join(save_path, '{:04}.ply'.format(i)))
+
+
 
 if __name__ == "__main__":
     # Set up command line argument parser
@@ -189,6 +204,7 @@ if __name__ == "__main__":
     parser.add_argument("--quiet", action="store_true")
     parser.add_argument("--start_checkpoint", type=str, default=None)
     parser.add_argument('--fluid_setup', type=int, default=0)
+    parser.add_argument('--ply_frame', type=int, default=0)    # determine which frame for saving ply
     args = parser.parse_args(sys.argv[1:])
 
     os.makedirs(args.model_path, exist_ok=True)
@@ -200,7 +216,8 @@ if __name__ == "__main__":
     # Start GUI server, configure and run training
     network_gui.init(args.ip, args.port)
     torch.autograd.set_detect_anomaly(args.detect_anomaly)
-    training(lp.extract(args), op.extract(args), pp.extract(args), args.start_checkpoint)
+    training(lp.extract(args), op.extract(args), pp.extract(args), args.start_checkpoint, args.ply_frame)
 
     # All done
     print("\nTraining complete.")
+

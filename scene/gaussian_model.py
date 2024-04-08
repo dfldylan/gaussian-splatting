@@ -126,22 +126,26 @@ class GaussianFrame:
     def get_num(self):
         return self._xyz.shape[0]
 
-    def construct_list_of_attributes(self):
-        l = ['x', 'y', 'z', 'nx', 'ny', 'nz', 'vx', 'vy', 'vz']
+    def construct_list_of_attributes(self, is_trans=False):
+        if is_trans == True:
+            l = ['x', 'y', 'z', 'nx', 'ny', 'nz', 'vx', 'vy', 'vz']
+        else:
+            l = ['x', 'y', 'z', 'nx', 'ny', 'nz']
         # All channels except the 3 DC
         for i in range(self._features_dc.shape[1] * self._features_dc.shape[2]):
             l.append('f_dc_{}'.format(i))
         for i in range(self._features_rest.shape[1] * self._features_rest.shape[2]):
             l.append('f_rest_{}'.format(i))
         l.append('opacity')
-        l.append('cfd')
+        if is_trans == True:
+            l.append('cfd')
         for i in range(self._scaling.shape[1]):
             l.append('scale_{}'.format(i))
         for i in range(self._rotation.shape[1]):
             l.append('rot_{}'.format(i))
         return l
 
-    def save_ply(self, path):
+    def save_ply_trans(self, path):
         mkdir_p(os.path.dirname(path))
 
         xyz = self._xyz.detach().cpu().numpy()
@@ -154,10 +158,29 @@ class GaussianFrame:
         scale = self._scaling.detach().cpu().numpy()
         rotation = self._rotation.detach().cpu().numpy()
 
-        dtype_full = [(attribute, 'f4') for attribute in self.construct_list_of_attributes()]
+        dtype_full = [(attribute, 'f4') for attribute in self.construct_list_of_attributes(is_trans=True)]
 
         elements = np.empty(xyz.shape[0], dtype=dtype_full)
         attributes = np.concatenate((xyz, normals, vel, f_dc, f_rest, opacities, cfd, scale, rotation), axis=1)
+        elements[:] = list(map(tuple, attributes))
+        el = PlyElement.describe(elements, 'vertex')
+        PlyData([el]).write(path)
+
+    def save_ply(self, path):
+        mkdir_p(os.path.dirname(path))
+
+        xyz = self._xyz.detach().cpu().numpy()
+        normals = np.zeros_like(xyz)
+        f_dc = self._features_dc.detach().transpose(1, 2).flatten(start_dim=1).contiguous().cpu().numpy()
+        f_rest = self._features_rest.detach().transpose(1, 2).flatten(start_dim=1).contiguous().cpu().numpy()
+        opacities = self._opacity.detach().cpu().numpy()
+        scale = self._scaling.detach().cpu().numpy()
+        rotation = self._rotation.detach().cpu().numpy()
+
+        dtype_full = [(attribute, 'f4') for attribute in self.construct_list_of_attributes()]
+
+        elements = np.empty(xyz.shape[0], dtype=dtype_full)
+        attributes = np.concatenate((xyz, normals, f_dc, f_rest, opacities, scale, rotation), axis=1)
         elements[:] = list(map(tuple, attributes))
         el = PlyElement.describe(elements, 'vertex')
         PlyData([el]).write(path)
