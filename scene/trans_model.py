@@ -60,7 +60,10 @@ class TransModel:
 
     def densify(self, selected_pts_mask, N=1):
         print("add {} points".format(2 * torch.sum(selected_pts_mask).cpu().detach().numpy()))
-        feats = self.feats[selected_pts_mask].repeat(N, 1)
+        if isinstance(N, int):
+            feats = self.feats[selected_pts_mask].repeat(N, 1)
+        else:
+            feats = torch.repeat_interleave(self.feats[selected_pts_mask], N, dim=0)
         self.feats = self.cat_tensors_to_optimizer({'track_feats': feats})['track_feats']
 
     def cat_tensors_to_optimizer(self, tensors_dict):

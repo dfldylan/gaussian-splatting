@@ -210,8 +210,8 @@ def training(dataset: ModelParams, opt: OptimizationParams, pipe, checkpoint, fl
                             gs_bg.reset_opacity()
 
 
-                else:
-                    if iteration % 1000 == 0 and iteration != opt.iterations:
+                elif iteration != opt.iterations:
+                    if iteration % 1000 == 0:
                         gaussians.prune_points((torch.vstack([gaussians.get_scaling[:,(0,2)].prod(1),gaussians.get_scaling[:,(0,1)].prod(1),gaussians.get_scaling[:,(1,2)].prod(1)])>1e-2).any(0), trans=trans)
                         gaussians.densify_and_prune(opt.densify_grad_threshold, opt.min_opacity,
                                                     scene.cameras_extent, 5000, prune_min_iters=500, prune_min_T=0.005,
@@ -221,6 +221,12 @@ def training(dataset: ModelParams, opt: OptimizationParams, pipe, checkpoint, fl
                         if iteration % 5000 == 0:
                             gaussians.reset_opacity()
                             gs_bg.reset_opacity()
+
+                elif iteration == opt.iterations:
+                    gaussians.prune_points((torch.vstack(
+                        [gaussians.get_scaling[:, (0, 2)].prod(1), gaussians.get_scaling[:, (0, 1)].prod(1),
+                         gaussians.get_scaling[:, (1, 2)].prod(1)]) > 1e-2).any(0), trans=trans)
+                    gaussians.split_ball(dataset.target_radius , max_num=opt.max_num_points, trans=trans)
 
             # Optimizer step
             if iteration <= opt.iterations:
