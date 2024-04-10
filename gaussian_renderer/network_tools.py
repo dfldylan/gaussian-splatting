@@ -59,7 +59,8 @@ def handle_network(pipe, gaussians_bg, gaussians, trans, time_info, background, 
 
                     gaussframe = build_gaussframe(gaussians=_gaussians, trans=_trans, time=time)
 
-                net_image = render(custom_cam, gaussframe, pipe, background, scaling_modifer)["render"]
+                ret = render(custom_cam, gaussframe, pipe, background, scaling_modifer)
+                net_image = ret["render"]
                 net_image_bytes = memoryview(
                     (torch.clamp(net_image, min=0, max=1.0) * 255).byte().permute(1, 2, 0).contiguous().cpu().numpy())
             network_gui.send(net_image_bytes, lp.source_path)
