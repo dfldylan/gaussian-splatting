@@ -24,7 +24,7 @@ from utils.time_utils import TimeSeriesInfo
 import numpy as np
 from gaussian_renderer.network_tools import handle_network
 from gaussian_renderer import render, network_gui
-
+from utils.density import compute_density
 
 def trans_sets(dataset: ModelParams, opt, pipe, checkpoint, time_info: TimeSeriesInfo = None):
     with torch.no_grad():
@@ -55,9 +55,9 @@ def trans_sets(dataset: ModelParams, opt, pipe, checkpoint, time_info: TimeSerie
             handle_network(pipe, None, gaussians, trans, time_info, background, (i == time_info.num_frames - 1),
                            dataset, opt.min_opacity)
             time = time_info.start_time + i * time_info.time_step
-            print('Frame {}, Time {}'.format(i, time))
             dt_xyz, dt_scaling, dt_rotation = trans(time)
             gaussian_frame = gaussians.move(dt_xyz, dt_scaling, dt_rotation)
+            print('Frame {}, Time {}, Density {}'.format(i, time,compute_density(gaussian_frame.get_xyz).mean()))
             gaussian_frame.save_ply(os.path.join(save_path, 'ply', '{:04}.ply'.format(i)))
             np.savez(os.path.join(save_path, '{:04}.npz'.format(i)), pos=gaussian_frame.get_xyz.cpu().detach().numpy())
 
