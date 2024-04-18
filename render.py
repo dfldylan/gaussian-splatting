@@ -61,7 +61,7 @@ if __name__ == "__main__":
     (model_params, trans_params, first_iter) = torch.load(args.start_checkpoint)
     gaussians.restore(model_params, opt, position_lr_max_steps=opt.iterations)
     trans.restore(trans_params, opt, reset_time=False)
-    view = scene.getTrainCameras()[0]
+    view = scene.getTrainCameras()[100]
 
     render_path = os.path.join(dataset.model_path, "renders")
     gts_path = os.path.join(dataset.model_path, "gt")

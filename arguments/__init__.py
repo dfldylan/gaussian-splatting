@@ -93,7 +93,7 @@ class OptimizationParams(ParamGroup):
         self.bg_iterations = 0
         self.warm_iterations = 1_0000
         self.dynamics_iterations = 15_0000
-        self.iterations = 30_0000
+        self.iterations = 60_0000
         self.density_from_iter = 0
 
         self.position_lr_init = 0.00016
