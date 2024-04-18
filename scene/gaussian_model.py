@@ -21,7 +21,6 @@ from simple_knn._C import distCUDA2
 from utils.graphics_utils import BasicPointCloud
 from utils.general_utils import strip_symmetric, build_scaling_rotation
 from scene.trans_model import TransModel
-from torch_func import classify_ball_op  # 替换为你的模块名
 from utils.tools import similarity_mask
 from utils.tools import generate_random_bool_tensor
 
