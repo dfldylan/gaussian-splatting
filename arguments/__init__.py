@@ -119,7 +119,7 @@ class OptimizationParams(ParamGroup):
         self.min_opacity = 0.005
 
         self.start_frame = 0
-        self.end_frame = 0
+        self.end_frame = -1
         self.static_start = 0
         self.static_end = 0
         self.eps = 1

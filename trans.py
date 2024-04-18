@@ -29,10 +29,10 @@ from gaussian_renderer import render, network_gui
 def trans_sets(dataset: ModelParams, opt, pipe, checkpoint, time_info: TimeSeriesInfo = None):
     with torch.no_grad():
         scene = Scene(dataset)
-        if dataset.end_frame == -1:
-            dataset.end_frame = scene.time_info.num_frames - 1
+        if opt.end_frame == -1:
+            opt.end_frame = scene.time_info.num_frames - 1
         gaussians = GaussianModel(dataset.sh_degree)
-        trans = TransModel(dataset, scene.time_info,opt.end_frame)
+        trans = TransModel(dataset, scene.time_info, opt.end_frame)
         if checkpoint:
             (model_params, trans_params, first_iter) = torch.load(checkpoint)
             gaussians.restore(model_params, opt, position_lr_max_steps=opt.iterations)
@@ -51,8 +51,8 @@ def trans_sets(dataset: ModelParams, opt, pipe, checkpoint, time_info: TimeSerie
 
         json.dump(time_info._asdict(), open(os.path.join(save_path, 'time_info.json'), 'w'))
 
-        for i in range(time_info.num_frames):
-            handle_network(pipe, None, gaussians, trans, time_info, background, (i == time_info.num_frames - 1),
+        for i in range(opt.start_frame, opt.end_frame + 1):
+            handle_network(pipe, None, gaussians, trans, time_info, background, (i == opt.end_frame),
                            dataset, opt)
             time = time_info.start_time + i * time_info.time_step
             print('Frame {}, Time {}'.format(i, time))

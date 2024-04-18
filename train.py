@@ -33,11 +33,11 @@ def training(dataset: ModelParams, opt: OptimizationParams, pipe, checkpoint):
     first_iter = 0
     _ = prepare_output_and_logger(dataset)
     scene = Scene(dataset)
-    if dataset.end_frame == -1:
-        dataset.end_frame = scene.time_info.num_frames - 1
+    if opt.end_frame == -1:
+        opt.end_frame = scene.time_info.num_frames - 1
 
     gaussians = GaussianModel(dataset.sh_degree)
-    trans = TransModel(dataset, scene.time_info,opt.end_frame)
+    trans = TransModel(dataset, scene.time_info, opt.end_frame)
 
     if checkpoint:
         (model_params, trans_params, first_iter) = torch.load(checkpoint)
@@ -65,15 +65,18 @@ def training(dataset: ModelParams, opt: OptimizationParams, pipe, checkpoint):
         bg = torch.rand((3), device="cuda") if opt.random_background else background
 
         if iteration <= opt.warm_iterations:
-            frame_id = dataset.end_frame
+            frame_id = opt.end_frame
         elif iteration <= opt.dynamics_iterations:
-            start_frame = int(dataset.end_frame -
-                              (iteration / opt.dynamics_iterations) * (dataset.end_frame - dataset.start_frame))
-            frame_id = choice(range(start_frame, dataset.end_frame + 1))
+            start_frame = int(opt.end_frame -
+                              (iteration / opt.dynamics_iterations) * (opt.end_frame - opt.start_frame))
+            frame_id = choice(range(start_frame, opt.end_frame + 1))
         else:
             gaussians.update_learning_rate(iteration - opt.dynamics_iterations)
-            start_frame = dataset.start_frame
-            frame_id = choice(range(start_frame, dataset.end_frame + 1))
+            if iteration % 100 == 0:
+                frame_id = opt.end_frame
+            else:
+                start_frame = opt.start_frame
+                frame_id = choice(range(start_frame, opt.end_frame + 1))
 
         viewpoint_stack = scene.getTrainCameras(frame_index=frame_id)
         viewpoint_cam: Camera = choice(viewpoint_stack)
@@ -82,18 +85,22 @@ def training(dataset: ModelParams, opt: OptimizationParams, pipe, checkpoint):
         gaussian_frame = gaussian_frame_dynamics
 
         render_pkg = render(viewpoint_cam, gaussian_frame, pipe, bg)
-        image, viewspace_point_tensor, visibility_filter, radii = render_pkg["render"], render_pkg["viewspace_points"], \
-            render_pkg["visibility_filter"], render_pkg["radii"]
+        image, viewspace_point_tensor, visibility_filter, radii, T_sum, T_count = render_pkg["render"], render_pkg[
+            "viewspace_points"], \
+            render_pkg["visibility_filter"], render_pkg["radii"], render_pkg["T_sum"], render_pkg["T_count"]
 
         # Loss
         gt_image = viewpoint_cam.original_image.cuda()
         Ll1 = l1_loss(image, gt_image)
         loss = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * (1.0 - ssim(image, gt_image))
-        loss = loss + opt.lambda_dens * density_loss(gaussian_frame_dynamics.get_xyz)
-        loss = loss + opt.lambda_aniso * aniso_loss(gaussian_frame_dynamics.get_scaling)
-        loss = loss + opt.lambda_vol * vol_loss(gaussian_frame_dynamics.get_scaling)
-        loss = loss + opt.lambda_opacity * opacity_loss(gaussians.get_opacity)
-        loss = loss + opt.lambda_feats * feature_loss(gaussians._features_dc.squeeze(1))
+        if iteration <= opt.dynamics_iterations:
+            loss = loss + opt.lambda_feats * feature_loss(gaussians._features_dc.squeeze(1))
+        else:
+            loss = loss + opt.lambda_dens * density_loss(gaussian_frame_dynamics.get_xyz)
+            loss = loss + opt.lambda_aniso * aniso_loss(gaussian_frame_dynamics.get_scaling)
+            loss = loss + opt.lambda_vol * vol_loss(gaussian_frame_dynamics.get_scaling)
+            loss = loss + opt.lambda_opacity * opacity_loss(gaussians.get_opacity)
+            loss = loss + opt.lambda_feats * feature_loss(gaussians._features_dc.squeeze(1), l=2)
         loss.backward()
         iter_end.record()
 
@@ -111,7 +118,8 @@ def training(dataset: ModelParams, opt: OptimizationParams, pipe, checkpoint):
             if visibility_filter.sum().cpu().numpy() != 0:
                 gaussians.max_radii2D[visibility_filter] = torch.max(gaussians.max_radii2D[visibility_filter],
                                                                      radii[visibility_filter])
-                gaussians.add_densification_stats(viewspace_point_tensor_grad, visibility_filter)
+                gaussians.add_densification_stats(viewspace_point_tensor_grad, visibility_filter, T_sum.unsqueeze(-1),
+                                                  T_count.unsqueeze(-1))
 
             if iteration <= opt.warm_iterations:
                 if iteration % 1000 == 0 and iteration != opt.warm_iterations:
@@ -128,8 +136,8 @@ def training(dataset: ModelParams, opt: OptimizationParams, pipe, checkpoint):
                     gaussians.densify_and_prune(opt.densify_grad_threshold, opt.min_opacity,
                                                 scene.cameras_extent, 1000, prune_min_iters=200, trans=trans)
                     gaussians.split_ellipsoids(dataset.target_radius, max_num=opt.max_num_points, trans=trans)
-                    gaussians.double_scaling()
-                    gaussians.reset_opacity(gaussians.get_opacity.mean())
+                    gaussians.double_scaling(multiplier=1.1)
+                    gaussians.reset_opacity(gaussians.get_opacity.mean().cpu().detach().numpy())
 
             else:
                 if iteration % 1000 == 0 and iteration != opt.iterations:
@@ -163,7 +171,6 @@ if __name__ == "__main__":
     parser.add_argument('--detect_anomaly', action='store_true', default=False)
     parser.add_argument("--quiet", action="store_true")
     parser.add_argument("--start_checkpoint", type=str, default=None)
-    parser.add_argument('--fluid_setup', type=int, default=0)
     args = parser.parse_args(sys.argv[1:])
 
     os.makedirs(args.model_path, exist_ok=True)
