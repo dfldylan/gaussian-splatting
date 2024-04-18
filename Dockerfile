@@ -12,7 +12,7 @@ RUN wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh -
     && rm /miniconda.sh
 ENV PATH=/miniconda/bin:${PATH}
 RUN conda create -n gaussian_splatting python=3.7.13
-RUN echo "source activate gaussian_splatting" > ~/.bashrc
+RUN echo "source /miniconda/bin/activate gaussian_splatting" > ~/.bashrc
 ENV PATH /opt/conda/envs/gaussian_splatting/bin:$PATH
 RUN conda install -n gaussian_splatting -c pytorch -c conda-forge -c defaults \
     cudatoolkit=11.6 \
