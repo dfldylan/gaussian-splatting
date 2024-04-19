@@ -8,7 +8,7 @@
 #
 # For inquiries contact  george.drettakis@inria.fr
 #
-
+import numpy as np
 import torch
 from scene import Scene
 import os
@@ -71,8 +71,8 @@ if __name__ == "__main__":
     bg_color = [1, 1, 1] if dataset.white_background else [0, 0, 0]
     background = torch.tensor(bg_color, dtype=torch.float32, device="cuda")
 
-    for frame_index in range(scene.time_info.num_frames):
+    for frame_index in np.arange(0,scene.time_info.num_frames,0.25):
         print(frame_index)
         frame_time = scene.time_info.get_time(frame_index)
-        render_set(pipe, frame_index, background=background, render_path=render_path, gts_path=gts_path,
+        render_set(pipe, int(4*frame_index), background=background, render_path=render_path, gts_path=gts_path,
                    gaussians=gaussians, trans=trans, view=view, frame_time=frame_time)
