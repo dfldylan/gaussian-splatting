@@ -57,7 +57,8 @@ def training(dataset: ModelParams, opt: OptimizationParams, pipe, checkpoint, pl
     iter_start = torch.cuda.Event(enable_timing=True)
     iter_end = torch.cuda.Event(enable_timing=True)
 
-    ema_loss_for_log = 0.0
+    ema_loss_for_log_gau = 0.0
+    ema_loss_for_log_trans = 0.0
     progress_bar = tqdm(range(0, opt.iterations), desc="Training progress", initial=first_iter)
     first_iter += 1
     for iteration in range(first_iter, opt.iterations + 1):
@@ -76,7 +77,7 @@ def training(dataset: ModelParams, opt: OptimizationParams, pipe, checkpoint, pl
         if dynamics_iter <= opt.warm_iterations:
             if dynamics_iter % 1000 == 0:
                 gaussians.oneupSHdegree()
-            frame_id = dataset.end_frame
+            frame_id = dataset.start_frame
         else:
             start_frame = dataset.start_frame
             frame_id = choice(range(start_frame, dataset.end_frame + 1))
@@ -99,30 +100,31 @@ def training(dataset: ModelParams, opt: OptimizationParams, pipe, checkpoint, pl
         Ll1 = l1_loss(image, gt_image)  # rgb
         loss_pic = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * (1.0 - ssim(image, gt_image))
         if dynamics_iter <= opt.warm_iterations:
-            loss_gau = loss_pic + opt.lambda_opacity * opacity_loss(gaussian_frame.get_opacity) + \
-                              10 * opt.lambda_dens * density_loss(gaussian_frame.get_xyz) + \
-                              opt.lambda_vol * vol_loss(gaussian_frame.get_scaling) + \
-                              opt.lambda_aniso * aniso_loss(gaussian_frame.get_scaling)
-        elif dynamics_iter <= 0.5 * opt.iterations:
             loss_gau = loss_pic + opt.lambda_vol * vol_loss(gaussian_frame.get_scaling) + \
                        opt.lambda_opacity * opacity_loss(gaussian_frame.get_opacity) + \
-                       opt.lambda_feats * feature_loss(gaussian_frame._features_dc)
+                       opt.lambda_dens * density_loss(gaussian_frame.get_xyz)
+
+        elif dynamics_iter <= 0.5 * opt.iterations:
+            loss_gau = loss_pic + opt.lambda_vol * vol_loss(gaussian_frame.get_scaling) + \
+                       opt.lambda_opacity * opacity_loss(gaussian_frame.get_opacity)
+
         else:
-            loss = loss_pic + opt.lambda_opacity * opacity_loss(gaussian_frame.get_opacity) + \
-                   opt.lambda_dens * density_loss(gaussian_frame.get_xyz)
-            loss = loss + opt.lambda_feats * feature_loss(gaussian_frame._features_rest)
+            loss = loss_pic + opt.lambda_opacity * opacity_loss(gaussian_frame.get_opacity)
+            loss += opt.lambda_feats * feature_loss(gaussian_frame._features_rest)
             loss = loss + 10 * opt.lambda_feats * feature_loss(gaussian_frame._features_dc)
             loss = loss + 10 * opt.lambda_vol * vol_loss(gaussian_frame.get_scaling)
             loss_gau = loss + 10 * opt.lambda_aniso * aniso_loss(gaussian_frame.get_scaling)
         loss_trans = loss_pic + opt.lambda_dens * density_loss(gaussian_frame.get_xyz)
-        loss_gau.backward(retain_graph = True)
+        loss_gau.backward(retain_graph=True)
         iter_end.record()
 
         with torch.no_grad():
             # Progress bar
-            ema_loss_for_log = 0.4 * loss_gau.item() + 0.6 * ema_loss_for_log
+            ema_loss_for_log_gau = 0.4 * loss_gau.item() + 0.6 * ema_loss_for_log_gau
+            ema_loss_for_log_trans = 0.4 * loss_trans.item() + 0.6 * ema_loss_for_log_trans
             if iteration % 100 == 0:
-                progress_bar.set_postfix({"Loss": f"{ema_loss_for_log:.{7}f}"})
+                progress_bar.set_postfix({"Loss_gau": f"{ema_loss_for_log_gau:.{7}f}"
+                                         , "Loss_trans": f"{ema_loss_for_log_trans:.{7}f}"})
                 progress_bar.update(100)
             if iteration == opt.iterations:
                 progress_bar.close()

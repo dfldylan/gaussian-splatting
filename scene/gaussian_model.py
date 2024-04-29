@@ -334,7 +334,7 @@ class GaussianModel(GaussianFrame):
             {'params': [self._xyz], 'lr': training_args.position_lr_init * self.spatial_lr_scale, "name": "xyz"},
             {'params': [self._vel], 'lr': training_args.velocity_lr_init * self.spatial_lr_scale, "name": "vel"},
             {'params': [self._features_dc], 'lr': training_args.feature_lr, "name": "f_dc"},
-            {'params': [self._features_rest], 'lr': training_args.feature_lr / 20.0, "name": "f_rest"},
+            {'params': [self._features_rest], 'lr': training_args.feature_lr/20.0, "name": "f_rest"},
             {'params': [self._opacity], 'lr': training_args.opacity_lr, "name": "opacity"},
             {'params': [self._cfd], 'lr': training_args.cfd_lr, "name": "cfd"},
             {'params': [self._scaling], 'lr': training_args.scaling_lr, "name": "scaling"},

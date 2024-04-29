@@ -448,12 +448,12 @@ def readNeurofluidInfo(path, white_background, eval, extension=".png", timestep_
                            extra={'box_info': box_info})
     return scene_info
 
-def gen_random_points(ply_path, num_pts=100_000):
+def gen_random_points(ply_path, num_pts=150_000):
     # Since this data set has no colmap data, we start with random points
     print(f"Generating random point cloud ({num_pts})...")
 
     # We create random points inside the bounds of the synthetic Blender scenes
-    xyz = np.random.random((num_pts, 3)) * 2.6 - 1.3  # [-1.3, 1.3) for each axis
+    xyz = np.random.random((num_pts, 3)) * 3.0 - 1.5  # [-1.6, 1.6) for each axis
     shs = np.random.random((num_pts, 3)) / 255.0
     # pcd = BasicPointCloud(points=xyz, colors=SH2RGB(shs), normals=np.zeros((num_pts, 3)))
 
