@@ -22,7 +22,7 @@ from utils.graphics_utils import BasicPointCloud
 from utils.general_utils import strip_symmetric, build_scaling_rotation
 from scene.trans_model import TransModel
 from torch_func import classify_ball_op  # 替换为你的模块名
-from utils.tools import similarity_mask
+from utils.tools import similarity_mask, generate_random_bool_tensor, classify_mask
 
 
 class GaussianFrame:
@@ -528,26 +528,19 @@ class GaussianModel(GaussianFrame):
         optimizable_tensors = self.replace_tensor_to_optimizer(new_scaling, "scaling")
         self._scaling = optimizable_tensors["scaling"]
 
-    def split_ellipsoids(self, N=2, trans=None, target_radius=None, max_num=None):
+    def prune_points_random(self, num, trans=None):
+        mask = generate_random_bool_tensor(self.get_num, num)
+        self.prune_points(mask, trans=trans)
 
-        threshold = []
-        if max_num is not None:
-            threshold.append(torch.quantile(torch.max(self.get_scaling, dim=1).values,
-                                            torch.clip(1 - (max_num - self.get_num) / self.get_num, min=0)))
-        if target_radius is not None:
-            threshold.append(1.8 * target_radius)
-        if len(threshold) == 0:
-            threshold = torch.quantile(torch.max(self.get_scaling, dim=1).values, 0.8)
-        else:
-            threshold = max(threshold)
-
+    def split_ellipsoids(self, target_radius=None, max_num=200000, N=2, trans=None):
+        threshold = target_radius
         selected_pts_mask = torch.any(self.get_scaling > threshold, dim=1)
-        # 检测并分裂
-        stds = self.get_scaling[selected_pts_mask].repeat(N, 1)
-        means = torch.zeros((stds.size(0), 3), device="cuda")
-        samples = torch.normal(mean=means, std=stds)
-        rots = build_rotation(self._rotation[selected_pts_mask]).repeat(N, 1, 1)
-        new_xyz = torch.bmm(rots, samples.unsqueeze(-1)).squeeze(-1) + self.get_xyz[selected_pts_mask].repeat(N, 1)
+        if selected_pts_mask.sum() < 1:
+            return
+        if self.get_num + selected_pts_mask.sum() * (N - 1) > max_num:
+            self.prune_points_random(self.get_num + selected_pts_mask.sum() * (N - 1) - max_num, trans=trans)
+            selected_pts_mask = torch.any(self.get_scaling > threshold, dim=1)
+        new_xyz = self.cal_split_xyz(selected_pts_mask, N)
         new_vel = self._vel[selected_pts_mask].repeat(N, 1)
         new_scaling = self.scaling_inverse_activation(self.get_scaling[selected_pts_mask].repeat(N, 1) / (0.8 * N))
         new_rotation = self._rotation[selected_pts_mask].repeat(N, 1)
@@ -618,7 +611,17 @@ class GaussianModel(GaussianFrame):
         if trans is not None:
             trans.densify(selected_pts_mask)
 
-    def densify_and_prune(self, max_grad, min_opacity, extent, max_screen_size=None, trans: TransModel = None):
+    def densify_and_prune(self, max_grad, min_opacity, extent, max_screen_size=None, prune_min_iters=200,
+                          prune_min_T=None, trans: TransModel = None):
+        if prune_min_T is None:
+            prune_mask = (self.denom < prune_min_iters).squeeze()
+            self.prune_points(prune_mask, trans=trans)
+        else:
+            mean_T = self.T_sum / self.T_count
+            mean_T[mean_T.isnan()] = 0.0
+            prune_mask = torch.logical_or((self.T_count < prune_min_iters), mean_T < prune_min_T).squeeze()
+            self.prune_points(prune_mask, trans=trans)
+
         grads = self.xyz_gradient_accum / self.denom
         grads[grads.isnan()] = 0.0
 
@@ -635,6 +638,7 @@ class GaussianModel(GaussianFrame):
         self.prune_points(prune_mask, trans=trans)
 
         torch.cuda.empty_cache()
+
 
     def add_densification_stats(self, viewspace_point_tensor_grad, update_filter):
         self.xyz_gradient_accum[update_filter] += torch.norm(viewspace_point_tensor_grad[update_filter, :2], dim=-1,
@@ -663,6 +667,32 @@ class GaussianModel(GaussianFrame):
     def prune_min_opacity(self, min_opacity, trans=None):
         opacity_mask = (self.get_opacity < min_opacity).squeeze()
         self.prune_points(opacity_mask, trans=trans)
+
+    def prune_district(self, eps=0.075, min_samples=10, first_class=0, trans=None):
+        xyz = self.get_xyz.detach().cpu().numpy()
+        mask = classify_mask(xyz, eps=eps, min_samples=min_samples, first_class=first_class)
+        self.prune_points(~torch.tensor(mask, dtype=torch.bool, device='cuda'), trans=trans)
+
+    def cal_split_xyz(self, selected_pts_mask, N):
+        # 构建旋转矩阵和标准差，这部分对两种情况都是通用的
+        rots = build_rotation(self._rotation[selected_pts_mask]).repeat(N, 1, 1)
+        stds = self.get_scaling[selected_pts_mask].repeat(N, 1)
+
+        # 生成均值为0的正态分布样本
+        means = torch.zeros((stds.size(0), 3), device="cuda")
+        samples = torch.normal(mean=means, std=stds)
+
+        # 计算新的坐标点
+        new_xyz = torch.bmm(rots, samples.unsqueeze(-1)).squeeze(-1) + self.get_xyz[selected_pts_mask].repeat(N, 1)
+
+        return new_xyz
+
+    def prune_color(self, dest_color, bias=0.65, trans=None):
+        if dest_color is None:
+            return
+        sh = RGB2SH(np.asarray(dest_color))
+        mask = similarity_mask(self._features_dc.squeeze(1), sh, threshold=bias)[0]
+        self.prune_points(~mask, trans)
 
     def prune_district(self, dis_thr=0.075, color_thr=0.65, first_class=0, trans=None):
         labels = classify_ball_op(self.get_xyz, self.get_scaling.mean(dim=1), self._features_dc.squeeze(1), dis_thr,

@@ -1,7 +1,28 @@
 import open3d as o3d
 import numpy as np
 import torch
+from sklearn.cluster import DBSCAN
 
+def generate_random_bool_tensor(size, n_true):
+    assert n_true <= size, "n_true cannot be greater than the tensor size."
+
+    # 创建一个全为 False 的 PyTorch 布尔张量
+    result = torch.zeros(size, dtype=torch.bool)
+
+    # 随机生成不重复的索引
+    true_indices = torch.randperm(size)[:n_true]
+    result[true_indices] = True
+
+    return result
+
+def classify_mask(xyz, eps=0.075, min_samples=10, first_class=0):
+    # 使用DBSCAN进行聚类
+    dbscan = DBSCAN(eps=eps, min_samples=min_samples)  # eps和min_samples根据实际情况调整
+    labels = dbscan.fit_predict(xyz)
+    unique_labels, counts = np.unique(labels, return_counts=True)
+    order = np.argsort(counts)[::-1]
+    select_label = unique_labels[order[first_class]]
+    return labels == select_label
 
 def categorize(points, eps=0.05):
     pcd = o3d.geometry.PointCloud(o3d.utility.Vector3dVector(points))

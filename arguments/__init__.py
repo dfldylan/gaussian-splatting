@@ -90,8 +90,9 @@ class PipelineParams(ParamGroup):
 
 class OptimizationParams(ParamGroup):
     def __init__(self, parser):
-        self.iterations = 30_0000
-        self.warm_iterations = 1_2000
+        self.iterations = 300_000
+        self.warm_iterations = 10_000
+        self.dynamics_iterations = 150_000
         self.bg_iterations = 0
         self.density_from_iter = 0
         self.position_lr_init = 0.00016
@@ -105,14 +106,14 @@ class OptimizationParams(ParamGroup):
         self.rotation_lr = 0.001
         self.percent_dense = 0.01
         self.lambda_dssim = 0.2
-        self.lambda_dens = 100
+        self.lambda_dens = 0.1
         self.lambda_aniso = 0.1
         self.lambda_vol = 0.1
-        self.lambda_opacity = 0.01
-        self.lambda_feats = 10
+        self.lambda_opacity = 0.1
+        self.lambda_feats = 0.1
         self.densify_grad_threshold = 0.001
         self.random_background = False
-        self.track_feat_lr = 0.001
+        self.track_feat_lr = 0.01
         self.track_mlp_lr = 0.0001
         self.max_num_points = 200000
         self.min_opacity = 0.005
