@@ -9,8 +9,8 @@ from argparse import ArgumentParser
 from arguments import ModelParams, PipelineParams
 
 
-def pipeline(dataset, pipe, path=None):
-    path = r'/workspace/gaussian/data/output_3dgaus/'
+def pipeline(dataset, pipe):
+    path = dataset.model_path
 
     bg_color = [1, 1, 1] if dataset.white_background else [0, 0, 0]
     background = torch.tensor(bg_color, dtype=torch.float32, device="cuda")
