@@ -51,7 +51,7 @@ if __name__ == "__main__":
     lp = ModelParams(parser)
     pp = PipelineParams(parser)
     parser.add_argument('--ip', type=str, default="0.0.0.0")
-    parser.add_argument('--port', type=int, default=6010)
+    parser.add_argument('--port', type=int, default=6009)
     args = parser.parse_args(sys.argv[1:])
 
     # Start GUI server, configure and run training
