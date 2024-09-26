@@ -13,7 +13,7 @@ import json
 import torch
 from scene import Scene, GaussianModel
 from scene.trans_model import TransModel
-from scene.gaussian_model import GaussianFrame
+from gaussfluids import GaussianFrame
 from tqdm import tqdm
 import os, sys
 import yaml

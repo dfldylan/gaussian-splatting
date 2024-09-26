@@ -20,7 +20,7 @@ import torchvision
 from utils.general_utils import safe_state
 from argparse import ArgumentParser
 from arguments import ModelParams, PipelineParams, get_combined_args, OptimizationParams
-from scene.gaussian_model import GaussianModel
+from gaussfluids import GaussianModel
 from scene.trans_model import TransModel
 
 
