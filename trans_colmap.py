@@ -11,9 +11,9 @@
 import json
 
 import torch
-from scene import Scene, GaussianModel
+from scene import Scene, Gaussfluids
 from scene.trans_model import TransModel
-from gaussfluids import GaussianFrame
+from gaussfluids import GaussfluidsModel
 from tqdm import tqdm
 import os, sys
 import yaml
@@ -36,7 +36,7 @@ def trans_sets(dataset: ModelParams, opt, pipe, checkpoint, fluid_setup, time_in
         scene = Scene(dataset)
         if opt.end_frame == -1:
             opt.end_frame = scene.time_info.num_frames - 1
-        gaussians = GaussianModel(dataset.sh_degree)
+        gaussians = Gaussfluids(dataset.sh_degree)
         trans = TransModel(dataset, scene.time_info, opt.end_frame)
         if checkpoint:
             (_, trans_params, first_iter, model_params) = torch.load(checkpoint)
@@ -67,7 +67,7 @@ def trans_sets(dataset: ModelParams, opt, pipe, checkpoint, fluid_setup, time_in
             np.savez(os.path.join(save_path, '{:04}.npz'.format(i)), pos=gaussian_frame.get_xyz.cpu().detach().numpy())
 
 
-def filter_gaussian(gaussian_frame: GaussianFrame):
+def filter_gaussian(gaussian_frame: GaussfluidsModel):
     xyz = gaussian_frame.get_xyz.cpu().numpy()
     mask = gaussian_frame.get_opacity.cpu().numpy() < 0.1
     xyz_filtered = xyz[mask[:, 0]]

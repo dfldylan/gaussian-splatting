@@ -18,7 +18,7 @@ from random import choice
 from utils.loss_utils import l1_loss, ssim, density_loss, aniso_loss, vol_loss, opacity_loss, feature_loss, \
     position_loss
 from gaussian_renderer import render, network_gui
-from scene import Scene, GaussianModel
+from scene import Scene, Gaussfluids
 from scene.trans_model import TransModel
 from scene.cameras import Camera
 from utils.general_utils import safe_state
@@ -40,8 +40,8 @@ def training(dataset: ModelParams, opt: OptimizationParams, pipe, checkpoint, fl
     if opt.end_frame == -1:
         opt.end_frame = scene.time_info.num_frames - 1
 
-    gs_bg = GaussianModel(dataset.sh_degree)
-    gaussians = GaussianModel(dataset.sh_degree)
+    gs_bg = Gaussfluids(dataset.sh_degree)
+    gaussians = Gaussfluids(dataset.sh_degree)
     trans = TransModel(dataset, scene.time_info, opt.end_frame)
 
     if checkpoint:

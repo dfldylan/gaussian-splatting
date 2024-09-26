@@ -2,7 +2,7 @@ import copy
 import torch
 import numpy as np
 import matplotlib.pyplot as plt
-from scene import GaussianModel
+from scene import Gaussfluids
 from gaussian_renderer import render, network_gui
 from arguments import ModelParams,OptimizationParams
 from scene.cameras import MiniCam
@@ -11,8 +11,8 @@ from utils.sh_utils import RGB2SH
 
 
 def build_gaussframe(gaussians=None, trans=None, time=None, gaussians_bg=None):
-    gaussians_bg: GaussianModel
-    gaussians: GaussianModel
+    gaussians_bg: Gaussfluids
+    gaussians: Gaussfluids
     if gaussians_bg is not None:
         gaussframe_0 = gaussians_bg.move_0()
     if gaussians is not None and gaussians.is_available:
@@ -51,7 +51,7 @@ def handle_network(pipe, gaussians_bg, gaussians, trans, time_info, background, 
                 elif checkbox_1 is True and checkbox_2 is False:
                     gaussframe = build_gaussframe(gaussians=gaussians, trans=trans, time=time)
                 elif checkbox_1 is True and checkbox_2 is True:
-                    _gaussians: GaussianModel = copy.deepcopy(gaussians)
+                    _gaussians: Gaussfluids = copy.deepcopy(gaussians)
                     _trans = copy.deepcopy(trans)
                     _gaussians.prune_min_opacity(min_opacity, trans=_trans)
                     if mask_manual is not None:

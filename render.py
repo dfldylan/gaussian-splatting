@@ -20,7 +20,7 @@ import torchvision
 from utils.general_utils import safe_state
 from argparse import ArgumentParser
 from arguments import ModelParams, PipelineParams, get_combined_args, OptimizationParams
-from gaussfluids import GaussianModel
+from gaussfluids import Gaussfluids
 from scene.trans_model import TransModel
 
 
@@ -56,7 +56,7 @@ if __name__ == "__main__":
     scene = Scene(dataset, shuffle=False)
     if dataset.end_frame == -1:
         dataset.end_frame = scene.time_info.num_frames - 1
-    gaussians = GaussianModel(dataset.sh_degree)
+    gaussians = Gaussfluids(dataset.sh_degree)
     trans = TransModel(dataset, scene.time_info,opt.end_frame)
     (model_params, trans_params, first_iter) = torch.load(args.start_checkpoint)
     gaussians.restore(model_params, opt, position_lr_max_steps=opt.iterations)

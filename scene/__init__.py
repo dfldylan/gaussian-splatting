@@ -14,7 +14,7 @@ import random
 import json
 from utils.system_utils import searchForMaxIteration
 from scene.dataset_readers import sceneLoadTypeCallbacks
-from gaussfluids import GaussianModel
+from gaussfluids import Gaussfluids
 from arguments import ModelParams
 from utils.camera_utils import cameraList_from_camInfos, camera_to_JSON
 from typing import List

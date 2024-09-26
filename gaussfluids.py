@@ -24,7 +24,7 @@ from scene.trans_model import TransModel
 from utils.tools import similarity_mask, generate_random_bool_tensor, classify_mask
 
 
-class GaussianFrame:
+class GaussfluidsModel:
     def setup_functions(self):
         def build_covariance_from_scaling_rotation(scaling, scaling_modifier, rotation):
             L = build_scaling_rotation(scaling_modifier * scaling, rotation)
@@ -97,7 +97,7 @@ class GaussianFrame:
         self.setup_functions()
 
     def add_extra_gaussians(self, other):
-        other: GaussianFrame
+        other: GaussfluidsModel
         self._xyz = torch.concat((self._xyz, other._xyz), dim=0)
         self._vel = torch.concat((self._vel, other._vel), dim=0)
         self._features_dc = torch.concat((self._features_dc, other._features_dc), dim=0)
@@ -163,15 +163,15 @@ class GaussianFrame:
         Clones and detaches all tensor attributes of the GaussianFrame instance
         from the computation graph.
         """
-        cloned_instance = GaussianFrame(self.active_sh_degree, self.max_sh_degree,
-                                        self._xyz.clone().detach(), self._vel.clone().detach(),
-                                        self._features_dc.clone().detach(), self._features_rest.clone().detach(),
-                                        self._scaling.clone().detach(), self._rotation.clone().detach(),
-                                        self._opacity.clone().detach(), self._cfd.clone().detach())
+        cloned_instance = GaussfluidsModel(self.active_sh_degree, self.max_sh_degree,
+                                           self._xyz.clone().detach(), self._vel.clone().detach(),
+                                           self._features_dc.clone().detach(), self._features_rest.clone().detach(),
+                                           self._scaling.clone().detach(), self._rotation.clone().detach(),
+                                           self._opacity.clone().detach(), self._cfd.clone().detach())
         return cloned_instance
 
 
-class GaussianModel(GaussianFrame):
+class Gaussfluids(GaussfluidsModel):
 
     def __init__(self, sh_degree: int, use_sigmoid_scaling_activation=False):
         super().__init__(active_sh_degree=0, max_sh_degree=sh_degree, _xyz=torch.empty(0), _vel=torch.empty(0),
@@ -627,19 +627,19 @@ class GaussianModel(GaussianFrame):
         self.T_sum += T_sum
         self.T_count += T_count
 
-    def move_0(self) -> GaussianFrame:
-        return GaussianFrame(self.active_sh_degree, self.max_sh_degree, self._xyz, self._vel, self._features_dc,
-                             self._features_rest, self._scaling, self._rotation, self._opacity, self._cfd)
+    def move_0(self) -> GaussfluidsModel:
+        return GaussfluidsModel(self.active_sh_degree, self.max_sh_degree, self._xyz, self._vel, self._features_dc,
+                                self._features_rest, self._scaling, self._rotation, self._opacity, self._cfd)
 
-    def move(self, dt_xyz, dt_scaling, dt_rotation) -> GaussianFrame:
-        return GaussianFrame(self.active_sh_degree, self.max_sh_degree, self._xyz + dt_xyz, self._vel,
-                             self._features_dc, self._features_rest, self._scaling,
-                             self._rotation, self._opacity, self._cfd)
+    def move(self, dt_xyz, dt_scaling, dt_rotation) -> GaussfluidsModel:
+        return GaussfluidsModel(self.active_sh_degree, self.max_sh_degree, self._xyz + dt_xyz, self._vel,
+                                self._features_dc, self._features_rest, self._scaling,
+                                self._rotation, self._opacity, self._cfd)
 
-    def move_detach(self, dt_xyz, dt_scaling, dt_rotation) -> GaussianFrame:
-        return GaussianFrame(self.active_sh_degree, self.max_sh_degree, self._xyz.clone().detach() + dt_xyz, self._vel,
-                             self._features_dc, self._features_rest, self._scaling.clone().detach() + dt_scaling,
-                             self._rotation.clone().detach() + dt_rotation, self._opacity, self._cfd)
+    def move_detach(self, dt_xyz, dt_scaling, dt_rotation) -> GaussfluidsModel:
+        return GaussfluidsModel(self.active_sh_degree, self.max_sh_degree, self._xyz.clone().detach() + dt_xyz, self._vel,
+                                self._features_dc, self._features_rest, self._scaling.clone().detach() + dt_scaling,
+                                self._rotation.clone().detach() + dt_rotation, self._opacity, self._cfd)
 
     @property
     def is_available(self):

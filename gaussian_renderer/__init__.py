@@ -12,10 +12,10 @@
 import torch
 import math
 from diff_gaussian_rasterization import GaussianRasterizationSettings, GaussianRasterizer
-from gaussfluids import GaussianFrame
+from gaussfluids import GaussfluidsModel
 from utils.sh_utils import eval_sh
 
-def render(viewpoint_camera, pc : GaussianFrame, pipe, bg_color : torch.Tensor, scaling_modifier = 1.0, override_color = None):
+def render(viewpoint_camera, pc : GaussfluidsModel, pipe, bg_color : torch.Tensor, scaling_modifier = 1.0, override_color = None):
     """
     Render the scene. 
     
