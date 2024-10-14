@@ -19,29 +19,13 @@ from plyfile import PlyData, PlyElement
 from utils.sh_utils import RGB2SH
 from simple_knn._C import distCUDA2
 from utils.graphics_utils import BasicPointCloud
-from utils.general_utils import strip_symmetric, build_scaling_rotation
+from utils.general_utils import build_covariance_from_scaling_rotation, modified_sigmoid, modified_sigmoid_inverse
 from scene.trans_model import TransModel
 from utils.tools import similarity_mask, generate_random_bool_tensor, classify_mask
 
 
 class GaussfluidsModel:
     def setup_functions(self):
-        def build_covariance_from_scaling_rotation(scaling, scaling_modifier, rotation):
-            L = build_scaling_rotation(scaling_modifier * scaling, rotation)
-            actual_covariance = L @ L.transpose(1, 2)
-            symm = strip_symmetric(actual_covariance)
-            return symm
-
-        def modified_sigmoid(x):
-            return 0.01 * (torch.sigmoid(x) + 1)
-
-        def modified_sigmoid_inverse(y):
-            # 首先，将 y 从 [0.01, 0.02] 转换回 [0, 1]
-            original_sigmoid_output = (y / 0.01) - 1
-
-            # 使用 torch.logit 应用逆 sigmoid 变换
-            return torch.logit(original_sigmoid_output)
-
         if self.use_sigmoid_scaling_activation:
             # 然后在你的类中使用这个函数
             self.scaling_activation = modified_sigmoid

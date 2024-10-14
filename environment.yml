@@ -1,4 +1,4 @@
-name: gaussian_splatting
+name: gaussfluids
 channels:
   - pytorch3d
   - pytorch

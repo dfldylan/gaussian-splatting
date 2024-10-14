@@ -131,3 +131,22 @@ def safe_state(silent):
     np.random.seed(0)
     torch.manual_seed(0)
     torch.cuda.set_device(torch.device("cuda:0"))
+
+
+def build_covariance_from_scaling_rotation(scaling, scaling_modifier, rotation):
+    L = build_scaling_rotation(scaling_modifier * scaling, rotation)
+    actual_covariance = L @ L.transpose(1, 2)
+    symm = strip_symmetric(actual_covariance)
+    return symm
+
+
+def modified_sigmoid(x):
+    return 0.01 * (torch.sigmoid(x) + 1)
+
+
+def modified_sigmoid_inverse(y):
+    # 首先，将 y 从 [0.01, 0.02] 转换回 [0, 1]
+    original_sigmoid_output = (y / 0.01) - 1
+
+    # 使用 torch.logit 应用逆 sigmoid 变换
+    return torch.logit(original_sigmoid_output)
