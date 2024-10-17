@@ -20,7 +20,7 @@ def build_gaussframe(gaussians=None, trans=None, time=None, gaussians_bg=None):
         gaussframe = gaussians.move(dt_xyz, dt_scaling, dt_rotation)
     if gaussians_bg is not None:
         if gaussians is not None and gaussians.is_available:
-            gaussframe_0.add_extra_gaussians(gaussframe)
+            gaussframe_0.add_gaussians(gaussframe)
         return gaussframe_0
     elif gaussians is not None and gaussians.is_available:
         return gaussframe

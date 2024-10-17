@@ -14,6 +14,7 @@ import sys
 from datetime import datetime
 import numpy as np
 import random
+from enum import IntEnum
 
 def inverse_sigmoid(x):
     return torch.log(x/(1-x))
@@ -150,3 +151,17 @@ def modified_sigmoid_inverse(y):
 
     # 使用 torch.logit 应用逆 sigmoid 变换
     return torch.logit(original_sigmoid_output)
+
+
+class ActivationType(IntEnum):
+    EXP = 0
+    SIGMOID = 1
+    MODIFIED_SIGMOID = 2
+
+
+# 定义激活函数和对应逆函数
+activation_functions = [
+    (torch.exp, torch.log),
+    (torch.sigmoid, inverse_sigmoid),
+    (modified_sigmoid, modified_sigmoid_inverse)
+]

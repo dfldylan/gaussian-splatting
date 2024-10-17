@@ -50,10 +50,10 @@ def training(dataset: ModelParams, opt: OptimizationParams, pipe, checkpoint, fl
         gaussians.restore(model_params, opt, position_lr_max_steps=opt.iterations - opt.dynamics_iterations)
         trans.restore(trans_params, opt, reset_time=False)
     else:
-        gs_bg.create_from_pcd(scene.point_cloud, scene.cameras_extent)
-        gs_bg.training_setup(opt, position_lr_max_steps=opt.bg_iterations)
-        gaussians.create_from_pcd(scene.point_cloud, scene.cameras_extent, init_color=dataset.dynamics_color)
-        gaussians.training_setup(opt, position_lr_max_steps=opt.iterations - opt.dynamics_iterations)
+        gs_bg.create_from_pcd(scene.point_cloud)
+        gs_bg.training_setup(opt, scene.cameras_extent, position_lr_max_steps=opt.bg_iterations)
+        gaussians.create_from_pcd(scene.point_cloud, init_color=dataset.dynamics_color)
+        gaussians.training_setup(opt, scene.cameras_extent, position_lr_max_steps=opt.iterations - opt.dynamics_iterations)
         trans.set_model(dataset, gaussians.get_num, opt)
 
     bg_color = [1, 1, 1] if dataset.white_background else [0, 0, 0]
@@ -110,7 +110,7 @@ def training(dataset: ModelParams, opt: OptimizationParams, pipe, checkpoint, fl
             viewpoint_cam: Camera = choice(viewpoint_stack)
             dt_xyz, dt_scaling, dt_rotation = trans(viewpoint_cam.time)
             gaussian_frame_dynamics = gaussians.move(dt_xyz, dt_scaling, dt_rotation)
-            gaussian_frame.add_extra_gaussians(gaussian_frame_dynamics)
+            gaussian_frame.add_gaussians(gaussian_frame_dynamics)
 
         render_pkg = render(viewpoint_cam, gaussian_frame, pipe, bg)
         image, viewspace_point_tensor, visibility_filter, radii, T_sum, T_count = render_pkg["render"], render_pkg[
@@ -239,7 +239,7 @@ def training(dataset: ModelParams, opt: OptimizationParams, pipe, checkpoint, fl
 
             if iteration % 1000 == 0:
                 print("\n[ITER {}] Saving Checkpoint".format(iteration))
-                torch.save((gs_bg.capture(), trans.capture(), iteration, gaussians.capture()),
+                torch.save((gs_bg.save(), trans.capture(), iteration, gaussians.save()),
                            scene.model_path + "/chkpnt" + str(iteration) + ".pth")
 
 

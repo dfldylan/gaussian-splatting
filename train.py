@@ -44,8 +44,8 @@ def training(dataset: ModelParams, opt: OptimizationParams, pipe, checkpoint):
         gaussians.restore(model_params, opt, position_lr_max_steps=opt.iterations - opt.dynamics_iterations)
         trans.restore(trans_params, opt, reset_time=False)
     else:
-        gaussians.create_from_pcd(scene.point_cloud, scene.cameras_extent, init_color=dataset.dynamics_color)
-        gaussians.training_setup(opt, position_lr_max_steps=opt.iterations - opt.dynamics_iterations)
+        gaussians.create_from_pcd(scene.point_cloud, init_color=dataset.dynamics_color)
+        gaussians.training_setup(opt, scene.cameras_extent, position_lr_max_steps=opt.iterations - opt.dynamics_iterations)
         trans.set_model(dataset, gaussians.get_num, opt)
 
     bg_color = [1, 1, 1] if dataset.white_background else [0, 0, 0]
@@ -156,7 +156,7 @@ def training(dataset: ModelParams, opt: OptimizationParams, pipe, checkpoint):
 
             if iteration % 1000 == 0:
                 print("\n[ITER {}] Saving Checkpoint".format(iteration))
-                torch.save((gaussians.capture(), trans.capture(), iteration),
+                torch.save((gaussians.save(), trans.capture(), iteration),
                            scene.model_path + "/chkpnt" + str(iteration) + ".pth")
 
 
