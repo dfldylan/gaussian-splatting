@@ -8,12 +8,12 @@
 #
 # For inquiries contact  george.drettakis@inria.fr
 #
-from functools import partial
 
+import cv2
+import numpy as np
 import torch
 from PIL import Image
 from torch import nn
-import numpy as np
 
 from dataset import ShootInfo
 from utils.general_utils import PILtoTorch
@@ -21,12 +21,19 @@ from utils.graphics_utils import getWorld2View2, getProjectionMatrix
 
 
 class ShootModel(nn.Module):
-    def __init__(self, shoot_info: ShootInfo, zfar=100.0, znear=0.01, trans=np.array([0.0, 0.0, 0.0]), scale=1.0):
+    def __init__(self, shoot_info: ShootInfo, zfar=100.0, znear=0.01, trans=np.array([0.0, 0.0, 0.0]), scale=1.0,
+                 is_nerf_synthetic=False):
         super(ShootModel, self).__init__()
         self.shoot_info: ShootInfo = shoot_info
         self.FoVx = self.shoot_info.FovX
         self.FoVy = self.shoot_info.FovY
         self.time = self.shoot_info.time
+
+        self.depth_path = self.shoot_info.depth_path
+        self.is_nerf_synthetic = is_nerf_synthetic
+        self.invdepthmap = None
+        self.depth_reliable = False
+        self.depth_mask = None
 
         self.world_view_transform = (torch.tensor(getWorld2View2(self.shoot_info.R, self.shoot_info.T, trans, scale))
                                      .transpose(0, 1).cuda())
@@ -42,10 +49,29 @@ class ShootModel(nn.Module):
 
     def _check_image(self):
         if self._image is None:
-            origin_image: Image.Image = self.shoot_info.image
-            if origin_image is None:
-                origin_image = Image.open(self.shoot_info.image_path)
+            origin_image = Image.open(self.shoot_info.image_path)
             orig_w, orig_h = origin_image.size
+
+            if self.depth_path != "":
+                try:
+                    if self.is_nerf_synthetic:
+                        invdepthmap = cv2.imread(self.depth_path, -1).astype(np.float32) / 512
+                    else:
+                        invdepthmap = cv2.imread(self.depth_path, -1).astype(np.float32) / float(2 ** 16)
+
+                except FileNotFoundError:
+                    print(f"Error: The depth file at path '{self.depth_path}' was not found.")
+                    raise
+                except IOError:
+                    print(
+                        f"Error: Unable to open the image file '{self.depth_path}'. It may be corrupted or an unsupported format.")
+                    raise
+                except Exception as e:
+                    print(
+                        f"An unexpected error occurred when trying to read depth at {self.depth_path}: {e}")
+                    raise
+            else:
+                invdepthmap = None
 
             if orig_w > 1600:
                 global WARNED
@@ -82,6 +108,26 @@ class ShootModel(nn.Module):
             else:
                 self._image *= torch.ones((1, self._image_height, self._image_width))
 
+            if invdepthmap is not None:
+                self.depth_mask = torch.ones_like(resized_image[0:1, ...].cuda())
+                self.invdepthmap = cv2.resize(invdepthmap, resolution)
+                self.invdepthmap[self.invdepthmap < 0] = 0
+                self.depth_reliable = True
+
+                if self.shoot_info.depth_params is not None:
+                    depth_params = self.shoot_info.depth_params
+                    if depth_params["scale"] < 0.2 * depth_params["med_scale"] or depth_params["scale"] > 5 * \
+                            depth_params["med_scale"]:
+                        self.depth_reliable = False
+                        self.depth_mask *= 0
+
+                    if depth_params["scale"] > 0:
+                        self.invdepthmap = self.invdepthmap * depth_params["scale"] + depth_params["offset"]
+
+                if self.invdepthmap.ndim != 2:
+                    self.invdepthmap = self.invdepthmap[..., 0]
+                self.invdepthmap = torch.from_numpy(self.invdepthmap[None]).cuda()
+
     @property
     def image(self):
         self._check_image()
@@ -115,5 +161,5 @@ class MiniCam:
 WARNED = False
 
 
-def cameraList_from_camInfos(cam_infos):
-    return [ShootModel(shoot_info=cam_info) for cam_info in cam_infos]
+def cameraList_from_camInfos(cam_infos, is_nerf_synthetic):
+    return [ShootModel(shoot_info=cam_info, is_nerf_synthetic=is_nerf_synthetic) for cam_info in cam_infos]

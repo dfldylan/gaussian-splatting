@@ -8,7 +8,9 @@
 #
 # For inquiries contact  george.drettakis@inria.fr
 #
+import json
 import os
+import sys
 from typing import List
 
 import numpy as np
@@ -71,8 +73,8 @@ def readFixedColmapInfo(path, eval, llffhold=8, time_step=1 / 30, timestep_x=1):
                 image_id += 1
 
     cam_extrinsics = images
-    cam_infos = readColmapCameras(cam_extrinsics=cam_extrinsics, cam_intrinsics=cam_cameras,
-                                  images_folder=path, time_step=time_step)
+    cam_infos = readColmapCameras(cam_extrinsics=cam_extrinsics, cam_intrinsics=cam_cameras, depths_params=None,
+                                  images_folder=path, depths_folder=None, seg_folder=None, time_step=time_step)
 
     if eval:
         train_cam_infos = [c for idx, c in enumerate(cam_infos) if idx % llffhold != 0]
@@ -103,7 +105,7 @@ def readFixedColmapInfo(path, eval, llffhold=8, time_step=1 / 30, timestep_x=1):
     return scene_info
 
 
-def readColmapSceneInfo(path, images, eval, llffhold=8):
+def readColmapSceneInfo(path, depths, seg, images=None, time_step=1 / 30, timestep_x=1):
     try:
         cameras_extrinsic_file = os.path.join(path, "sparse/0", "images.bin")
         cameras_intrinsic_file = os.path.join(path, "sparse/0", "cameras.bin")
@@ -115,18 +117,40 @@ def readColmapSceneInfo(path, images, eval, llffhold=8):
         cam_extrinsics = read_extrinsics_text(cameras_extrinsic_file)
         cam_intrinsics = read_intrinsics_text(cameras_intrinsic_file)
 
-    reading_dir = "images" if images == None else images
-    cam_infos_unsorted: List[ShootInfo] = readColmapCameras(cam_extrinsics=cam_extrinsics,
-                                                            cam_intrinsics=cam_intrinsics,
-                                                            images_folder=os.path.join(path, reading_dir))
-    cam_infos = sorted(cam_infos_unsorted.copy(), key=lambda x: x.image_name)
+    depth_params_file = os.path.join(path, "sparse/0", "depth_params.json")
+    ## if depth_params_file isnt there AND depths file is here -> throw error
+    depths_params = None
+    if depths != "":
+        try:
+            with open(depth_params_file, "r") as f:
+                depths_params = json.load(f)
+            all_scales = np.array([depths_params[key]["scale"] for key in depths_params])
+            if (all_scales > 0).sum():
+                med_scale = np.median(all_scales[all_scales > 0])
+            else:
+                med_scale = 0
+            for key in depths_params:
+                depths_params[key]["med_scale"] = med_scale
 
-    if eval:
-        train_cam_infos = [c for idx, c in enumerate(cam_infos) if idx % llffhold != 0]
-        test_cam_infos = [c for idx, c in enumerate(cam_infos) if idx % llffhold == 0]
-    else:
-        train_cam_infos = cam_infos
-        test_cam_infos = []
+        except FileNotFoundError:
+            print(f"Error: depth_params.json file not found at path '{depth_params_file}'.")
+            sys.exit(1)
+        except Exception as e:
+            print(f"An unexpected error occurred when trying to open depth_params.json file: {e}")
+            sys.exit(1)
+
+    reading_dir = "images" if images == None else images
+    cam_infos: List[ShootInfo] = readColmapCameras(cam_extrinsics=cam_extrinsics,
+                                                   cam_intrinsics=cam_intrinsics,
+                                                   depths_params=depths_params,
+                                                   images_folder=os.path.join(path, reading_dir),
+                                                   depths_folder=os.path.join(path, depths) if depths != "" else "",
+                                                   seg_folder=os.path.join(path, seg) if seg != "" else "",
+                                                   time_step=time_step,
+                                                   )
+
+    train_cam_infos = cam_infos
+    test_cam_infos = []
 
     nerf_normalization = getNerfppNorm(train_cam_infos)
 
@@ -144,20 +168,24 @@ def readColmapSceneInfo(path, images, eval, llffhold=8):
         pcd = fetchPly(ply_path)
     except:
         pcd = None
-
+    time_info: TimeSeriesInfo = handle_time(cam_infos)
+    if timestep_x != 1:
+        time_info = TimeSeriesInfo(time_info.start_time, time_info.time_step * timestep_x,
+                                   time_info.num_frames // timestep_x)
     scene_info = DatasetInfo(point_cloud=pcd,
                              train_cameras=train_cam_infos,
                              test_cameras=test_cam_infos,
                              nerf_normalization=nerf_normalization,
+                             time_info=time_info,
                              )
     return scene_info
 
 
-def readNerfSyntheticInfo(path, white_background, eval, extension=".png"):
+def readNerfSyntheticInfo(path, eval, extension=".png"):
     print("Reading Training Transforms")
-    train_cam_infos = readCamerasFromTransforms(path, "transforms_train.json", white_background, extension)
+    train_cam_infos = readCamerasFromTransforms(path, "transforms_train.json", extension)
     print("Reading Test Transforms")
-    test_cam_infos = readCamerasFromTransforms(path, "transforms_test.json", white_background, extension)
+    test_cam_infos = readCamerasFromTransforms(path, "transforms_test.json", extension)
 
     if not eval:
         train_cam_infos.extend(test_cam_infos)
@@ -190,7 +218,7 @@ def readNerfSyntheticInfo(path, white_background, eval, extension=".png"):
     return scene_info
 
 
-def readNeurofluidInfo(path, white_background, eval, extension=".png", timestep_scaling=1):
+def readNeurofluidInfo(path, eval, extension=".png", timestep_scaling=1):
     print("Reading Training Transforms")
     train_cam_infos = []
     print("Reading Test Transforms")
@@ -204,9 +232,9 @@ def readNeurofluidInfo(path, white_background, eval, extension=".png", timestep_
             continue
         sub_path = os.path.join(path, folder)
         train_cam_infos.extend(
-            readCamerasFromTransforms(sub_path, "transforms_train.json", white_background, extension))
+            readCamerasFromTransforms(sub_path, "transforms_train.json", extension))
         test_cam_infos.extend(
-            readCamerasFromTransforms(sub_path, "transforms_test.json", white_background, extension))
+            readCamerasFromTransforms(sub_path, "transforms_test.json", extension))
 
     time_info: TimeSeriesInfo = handle_time(train_cam_infos + test_cam_infos)
     if abs(timestep_scaling - 1) > 1e-5:

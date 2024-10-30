@@ -45,6 +45,9 @@ class OptimizationParams():
     lambda_vol: float = 0.1
     lambda_opacity: float = 0.1
     lambda_feats: float = 0.1
+    # Depth Setup
+    depth_l1_weight_init = 1.0
+    depth_l1_weight_final = 0.01
     # Frame parameters
     start_frame: int = 0
     end_frame: int = -1

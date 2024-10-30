@@ -124,20 +124,14 @@ def readCamerasFromTransforms(path, transformsfile, white_background, extension=
             image_name = Path(cam_name).stem
             image = Image.open(image_path)
 
-            im_data = np.array(image.convert("RGBA"))
-
-            bg = np.array([1, 1, 1]) if white_background else np.array([0, 0, 0])
-
-            norm_data = im_data / 255.0
-            arr = norm_data[:, :, :3] * norm_data[:, :, 3:4] + bg * (1 - norm_data[:, :, 3:4])
-            image = Image.fromarray(np.array(arr * 255.0, dtype=np.byte), "RGB")
-
             fovy = focal2fov(fov2focal(fovx, image.size[0]), image.size[1])
             FovY = fovy
             FovX = fovx
 
-            cam_infos.append(ShootInfo(uid=idx, R=R, T=T, FovY=FovY, FovX=FovX, image=image, image_path=image_path,
-                                       image_name=image_name, width=image.size[0], height=image.size[1], time=time))
+            cam_infos.append(
+                ShootInfo(uid=idx, R=R, T=T, FovY=FovY, FovX=FovX, depth_params=None, image_path=image_path,
+                          image_name=image_name, depth_path="", seg_path="", width=image.size[0], height=image.size[1],
+                          time=time))
 
     return cam_infos
 
@@ -404,10 +398,9 @@ def readCamerasFromScalarFlow(base_path: str, calib_folder, bg_threshold=8):
             time = cam_data['time']
 
             image_path = os.path.join(base_path, img_name)
-            image = Image.open(image_path)
             cam_infos.append(
-                ShootInfo(uid=id, R=R, T=-R.T @ T, FovY=fovy, FovX=fovx, image=image, image_path=image_path,
-                          image_name=img_name, width=width, height=height, time=time))
+                ShootInfo(uid=id, R=R, T=-R.T @ T, FovY=fovy, FovX=fovx, depth_params=None, image_path=image_path,
+                          image_name=img_name, depth_path="", seg_path="", width=width, height=height, time=time))
     else:
         # Read camera data from txt files and save to JSON if cache is enabled
         camera_infos = []
@@ -472,8 +465,8 @@ def readCamerasFromScalarFlow(base_path: str, calib_folder, bg_threshold=8):
                     "time": time,
                 })
                 cam_infos.append(
-                    ShootInfo(uid=uid, R=R, T=-R.T @ T, FovY=fovy, FovX=fovx, image=image, image_path=image_path,
-                              image_name=image_name, width=width, height=height, time=time))
+                    ShootInfo(uid=uid, R=R, T=-R.T @ T, FovY=fovy, FovX=fovx, depth_params=None, image_path=image_path,
+                              image_name=image_name, depth_path="", seg_path="", width=width, height=height, time=time))
 
         json.dump(cameras_data, open(json_file_path, 'w'), indent=4)
 

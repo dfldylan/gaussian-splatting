@@ -1,22 +1,30 @@
+import json
 import logging
-import os.path
+import os
 from dataclasses import dataclass
 from random import choice
 
+import numpy as np
 import torch
+import torchvision
+from matplotlib.colors import to_rgb
 from tqdm import tqdm
 
 import arguments
+import model
 from arguments.__init__ import ModelParams
 from dataset import DataLoader, DatasetInfo
 from dataset.cameras import ShootModel
 from dataset.readers import readScalarFlowInfo
 from model import Gaussfluids
+from render import handle_factor
 from renderer import render
 from renderer.network_tools import handle_network
 from utils.loss_utils import l1_loss, ssim, density_loss, aniso_loss, vol_loss, opacity_loss, feature_loss
+from utils.math import ActivationType
 from utils.sh_utils import rgb_str_to_sh_tensor
 from utils.system_utils import dump_cfg
+from utils.time_utils import TimeSeriesInfo
 
 
 @dataclass
@@ -33,7 +41,7 @@ def training(source_path, model_path, mdl: ModelParams, opt: OptimizationParams,
     first_iter = 0
     dump_cfg(mdl, model_path)
     dataset: DatasetInfo = readScalarFlowInfo(source_path, pipe.calib_folder)
-    dataloader = DataLoader(mdl.data_device, dataset)
+    dataloader = DataLoader(mdl.data_device, dataset, is_nerf_synthetic=False)
     if opt.end_frame == -1:
         opt.end_frame = dataloader.time_info.num_frames - 1
 
@@ -63,8 +71,7 @@ def training(source_path, model_path, mdl: ModelParams, opt: OptimizationParams,
         if iteration <= opt.warm_iterations:
             frame_id = opt.end_frame
         elif iteration <= opt.dynamics_iterations:
-            start_frame = int(opt.end_frame -
-                              (iteration / opt.dynamics_iterations) * (opt.end_frame - opt.start_frame))
+            start_frame = int(opt.end_frame - (iteration / opt.dynamics_iterations) * (opt.end_frame - opt.start_frame))
             frame_id = choice(range(start_frame, opt.end_frame + 1))
         else:
             gaussfluids.update_learning_rate(iteration - opt.dynamics_iterations)
@@ -97,7 +104,7 @@ def training(source_path, model_path, mdl: ModelParams, opt: OptimizationParams,
             loss = loss + opt.lambda_feats * feature_loss(gaussfluids.features_dc.squeeze(1), l=2)
         loss.backward()
 
-        with (torch.no_grad()):
+        with torch.no_grad():
             # Progress bar
             ema_loss_for_log = 0.4 * loss.item() + 0.6 * ema_loss_for_log
             if iteration % 100 == 0:
@@ -132,11 +139,10 @@ def training(source_path, model_path, mdl: ModelParams, opt: OptimizationParams,
                     gaussfluids.double_scaling(multiplier=1.1)
                     gaussfluids.reset_opacity(gaussfluids.get_opacity.mean().cpu().detach().numpy())
 
-            else:
-                if iteration % 1000 == 0 and iteration != opt.iterations:
-                    gaussfluids.densify_and_prune(opt.densify_grad_threshold, opt.min_opacity,
-                                                  dataloader.cameras_extent, opt.max_screen_size)
-                    gaussfluids.split_ellipsoids(opt.target_radius, max_num=opt.max_num_points)
+            elif iteration % 1000 == 0 and iteration != opt.iterations:
+                gaussfluids.densify_and_prune(opt.densify_grad_threshold, opt.min_opacity,
+                                              dataloader.cameras_extent, opt.max_screen_size)
+                gaussfluids.split_ellipsoids(opt.target_radius, max_num=opt.max_num_points)
 
             # Optimizer step
             if iteration <= opt.iterations:
@@ -148,17 +154,10 @@ def training(source_path, model_path, mdl: ModelParams, opt: OptimizationParams,
                 torch.save((gaussfluids.save(), iteration), model_path + "/chkpnt" + str(iteration) + ".pth")
 
 
-from render import handle_factor
-from matplotlib.colors import to_rgb
-import model
-from utils.math import ActivationType
-import torchvision
-
-
 def rendering(source_path, output_path, mdl: ModelParams, opt: OptimizationParams, pipe: PipelineParams, checkpoint,
               scaling_factor=None, opacity_factor=None, bg_color=None, gs_color=None):
     dataset: DatasetInfo = readScalarFlowInfo(source_path, pipe.calib_folder)
-    dataloader = DataLoader(mdl.data_device, dataset, shuffle=False)
+    dataloader = DataLoader(mdl.data_device, dataset, shuffle=False, is_nerf_synthetic=False)
     if opt.end_frame == -1:
         opt.end_frame = dataloader.time_info.num_frames - 1
     gaussfluids = Gaussfluids(mdl.sh_degree, channel=1, base_time=dataloader.time_info.get_time(opt.end_frame),
@@ -208,16 +207,11 @@ def rendering(source_path, output_path, mdl: ModelParams, opt: OptimizationParam
             torchvision.utils.save_image(gt, os.path.join(gts_path, '{0:04d}'.format(frame_index) + ".png"))
 
 
-from utils.time_utils import TimeSeriesInfo
-import json
-import numpy as np
-
-
 def dump_npz_set(source_path, output_path, mdl: ModelParams, opt: OptimizationParams, pipe: PipelineParams,
                  checkpoint=None, time_info: TimeSeriesInfo = None, ply=True):
     with torch.no_grad():
         dataset: DatasetInfo = readScalarFlowInfo(source_path, pipe.calib_folder)
-        dataloader = DataLoader(mdl.data_device, dataset, shuffle=False)
+        dataloader = DataLoader(mdl.data_device, dataset, shuffle=False, is_nerf_synthetic=False)
         if opt.end_frame == -1:
             opt.end_frame = dataloader.time_info.num_frames - 1
         gaussfluids = Gaussfluids(mdl.sh_degree, channel=1, base_time=dataloader.time_info.get_time(opt.end_frame),

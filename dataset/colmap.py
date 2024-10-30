@@ -80,7 +80,6 @@ class Image(BaseImage):
         return qvec2rotmat(self.qvec)
 
 
-
 def read_next_bytes(fid, num_bytes, format_char_sequence, endian_character="<"):
     """Read and unpack the next bytes from a binary file.
     :param fid:
@@ -308,7 +307,8 @@ def read_colmap_bin_array(path):
     return np.transpose(array, (1, 0, 2)).squeeze()
 
 
-def _process_colmap_camera(key, cam_extrinsics, cam_intrinsics, images_folder, time_step):
+def _process_colmap_camera(key, cam_extrinsics, cam_intrinsics, depths_params, images_folder, depths_folder, seg_folder,
+                           time_step):
     sys.stdout.write('\r')
     # the exact output you're looking for:
     sys.stdout.write("Reading camera {}/{}".format(key + 1, len(cam_extrinsics)))
@@ -335,20 +335,32 @@ def _process_colmap_camera(key, cam_extrinsics, cam_intrinsics, images_folder, t
     else:
         assert False, "Colmap camera model not handled: only undistorted datasets (PINHOLE or SIMPLE_PINHOLE cameras) supported!"
 
+    n_remove = len(extr.name.split('.')[-1]) + 1
+    depth_params = None
+    if depths_params is not None:
+        try:
+            depth_params = depths_params[extr.name[:-n_remove]]
+        except:
+            print("\n", key, "not found in depths_params")
+
     image_path = os.path.join(images_folder, extr.name)
-    image_name = os.path.basename(image_path).split(".")[0]
+    image_name = extr.name
+    depth_path = os.path.join(depths_folder, f"{extr.name[:-n_remove]}.png") if depths_folder != "" else ""
+    seg_path = os.path.join(seg_folder, f"{extr.name}.png") if seg_folder != "" else ""
 
     if time_step:
-        cam_info = ShootInfo(uid=uid, R=R, T=T, FovY=FovY, FovX=FovX, image=None,
-                             image_path=image_path, image_name=image_name, width=width, height=height,
-                             time=time_step * extr.frame_id)
+        cam_info = ShootInfo(uid=uid, R=R, T=T, FovY=FovY, FovX=FovX, depth_params=depth_params, image_path=image_path,
+                             image_name=image_name, depth_path=depth_path, seg_path=seg_path, width=width,
+                             height=height, time=time_step * extr.frame_id)
     else:
-        cam_info = ShootInfo(uid=uid, R=R, T=T, FovY=FovY, FovX=FovX, image=None,
-                             image_path=image_path, image_name=image_name, width=width, height=height, time=0)
+        cam_info = ShootInfo(uid=uid, R=R, T=T, FovY=FovY, FovX=FovX, depth_params=depth_params, image_path=image_path,
+                             image_name=image_name, depth_path=depth_path, seg_path=seg_path, width=width,
+                             height=height, time=0)
     return cam_info
 
 
-def readColmapCameras(cam_extrinsics, cam_intrinsics, images_folder, time_step=None):
+def readColmapCameras(cam_extrinsics, cam_intrinsics, depths_params, images_folder, depths_folder, seg_folder,
+                      time_step=None):
     cam_infos = []
 
     # 创建进程池
@@ -356,7 +368,8 @@ def readColmapCameras(cam_extrinsics, cam_intrinsics, images_folder, time_step=N
         # 使用pool.starmap并行处理
         results = pool.starmap(_process_colmap_camera,
                                zip(cam_extrinsics.keys(), repeat(cam_extrinsics), repeat(cam_intrinsics),
-                                   repeat(images_folder), repeat(time_step)))
+                                   repeat(depths_params), repeat(images_folder), repeat(depths_folder),
+                                   repeat(seg_folder), repeat(time_step)))
         cam_infos.extend(results)
 
     sys.stdout.write('\n')

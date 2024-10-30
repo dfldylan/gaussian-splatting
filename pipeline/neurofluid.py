@@ -26,22 +26,24 @@ from renderer.network_tools import handle_network
 from utils.system_utils import dump_cfg
 from dataset.readers import readNeurofluidInfo
 
+
 @dataclass
 class Params:
-    max_screen_size=1000
+    max_screen_size = 1000
+
 
 def training(mdl: ModelParams, opt: OptimizationParams, pipe, checkpoint):
     opt.bg_iterations = 0  # NeuroFluid dataset does not have bg
 
     first_iter = 0
     dump_cfg(mdl, model_path)
-    scene_info = readNeurofluidInfo(source_path, mdl.white_background, eval=False,
-                                    timestep_scaling=pipe.time_scaling)
+    scene_info = readNeurofluidInfo(source_path, eval=False, timestep_scaling=pipe.time_scaling)
     scene = DataLoader(mdl, scene_info)
     if opt.end_frame == -1:
         opt.end_frame = scene.time_info.num_frames - 1
 
-    gaussians = Gaussfluids(mdl.sh_degree, base_time=scene.time_info.get_time(opt.end_frame),hidden_sizes=mdl.hidden_sizes,track_channel=mdl.track_channel)
+    gaussians = Gaussfluids(mdl.sh_degree, base_time=scene.time_info.get_time(opt.end_frame),
+                            hidden_sizes=mdl.hidden_sizes, track_channel=mdl.track_channel)
 
     if checkpoint:
         (model_params, first_iter) = torch.load(checkpoint)
@@ -160,8 +162,9 @@ def training(mdl: ModelParams, opt: OptimizationParams, pipe, checkpoint):
                 torch.save((gaussians.save(), iteration),
                            model_path + "/chkpnt" + str(iteration) + ".pth")
 
+
 def render_set(pp: PipelineParams, frame_index, shoot: ShootModel, background, render_path, gts_path, gaussfluids,
-               frame_time, scaling_factor=None, opacity_factor=None, gs_color_sh:torch.Tensor=None):
+               frame_time, scaling_factor=None, opacity_factor=None, gs_color_sh: torch.Tensor = None):
     # mp, _ = ArgumentParser(neurofluid.ModelParams, allow_abbrev=False).parse_known_args()
     # pp, _ = ArgumentParser(neurofluid.PipelineParams, allow_abbrev=False).parse_known_args()
     # op, _ = ArgumentParser(neurofluid.OptimizationParams, allow_abbrev=False).parse_known_args()
@@ -207,14 +210,15 @@ def render_set(pp: PipelineParams, frame_index, shoot: ShootModel, background, r
         torchvision.utils.save_image(rendering, os.path.join(render_path, '{0:04d}'.format(frame_index) + ".png"))
         torchvision.utils.save_image(gt, os.path.join(gts_path, '{0:04d}'.format(frame_index) + ".png"))
 
+
 def dump_sets(mdl: ModelParams, opt: OptimizationParams, pipe, checkpoint, time_info: TimeSeriesInfo = None):
     with torch.no_grad():
-        dataset = readNeurofluidInfo(source_path, mdl.white_background, eval=False,
-                                        timestep_scaling=pipe.time_scaling)
+        dataset = readNeurofluidInfo(source_path, eval=False, timestep_scaling=pipe.time_scaling)
         dataloader = DataLoader(mdl, dataset)
         if opt.end_frame == -1:
             opt.end_frame = dataloader.time_info.num_frames - 1
-        gaussians = Gaussfluids(mdl.sh_degree, base_time=dataloader.time_info.get_time(opt.end_frame), hidden_sizes=mdl.hidden_sizes,track_channel=mdl.track_channel)
+        gaussians = Gaussfluids(mdl.sh_degree, base_time=dataloader.time_info.get_time(opt.end_frame),
+                                hidden_sizes=mdl.hidden_sizes, track_channel=mdl.track_channel)
         if checkpoint:
             (model_params, first_iter) = torch.load(checkpoint)
             opt_dict = gaussians.restore(model_params)
@@ -242,11 +246,13 @@ def dump_sets(mdl: ModelParams, opt: OptimizationParams, pipe, checkpoint, time_
             gaussian_frame.save_ply(os.path.join(save_path, 'ply', '{:04}.ply'.format(i)))
             np.savez(os.path.join(save_path, '{:04}.npz'.format(i)), pos=gaussian_frame.get_xyz.cpu().detach().numpy())
 
+
 def filter_gaussian(gaussian_frame: GaussfluidsModel):
     xyz = gaussian_frame.get_xyz.cpu().numpy()
     mask = gaussian_frame.get_opacity.cpu().numpy() < 0.1
     xyz_filtered = xyz[mask[:, 0]]
     return xyz_filtered
+
 
 if __name__ == "__main__":
     # Set up command line argument parser

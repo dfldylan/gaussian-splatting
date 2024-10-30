@@ -21,13 +21,15 @@ import torch
 
 class ShootInfo(NamedTuple):
     uid: int
-    R: np.array # R's transpose of w2c matrix, same to R of c2w matrix
-    T: np.array # T of w2c matrix
+    R: np.array  # R's transpose of w2c matrix, same to R of c2w matrix
+    T: np.array  # T of w2c matrix
     FovY: np.array
     FovX: np.array
-    image: np.array
+    depth_params: dict
     image_path: str
     image_name: str
+    depth_path: str
+    seg_path: str
     width: int
     height: int
     time: float = 0.0
@@ -75,7 +77,7 @@ from dataset.cameras import ShootModel, cameraList_from_camInfos
 
 
 class DataLoader:
-    def __init__(self, data_device, scene_info: DatasetInfo, shuffle=True):
+    def __init__(self, data_device, scene_info: DatasetInfo, shuffle=True, is_nerf_synthetic=True):
         if shuffle:
             random.shuffle(scene_info.train_cameras)  # Multi-res consistent random shuffling
             random.shuffle(scene_info.test_cameras)  # Multi-res consistent random shuffling
@@ -90,9 +92,9 @@ class DataLoader:
             self.data_device = torch.device("cuda")
 
         print("Loading Training Cameras")
-        self.train_cameras = cameraList_from_camInfos(scene_info.train_cameras)
+        self.train_cameras = cameraList_from_camInfos(scene_info.train_cameras, is_nerf_synthetic=is_nerf_synthetic)
         print("Loading Test Cameras")
-        self.test_cameras = cameraList_from_camInfos(scene_info.test_cameras)
+        self.test_cameras = cameraList_from_camInfos(scene_info.test_cameras, is_nerf_synthetic=is_nerf_synthetic)
 
         self.time_info = scene_info.time_info
         self.extra = scene_info.extra

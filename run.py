@@ -6,7 +6,7 @@ import torch
 from argparse_dataclass import ArgumentParser
 
 from dataset import DatasetType, detect_dataset_type
-from pipeline import scalarflow
+from pipeline import scalarflow, colmap
 from renderer import network_gui
 from utils.general_utils import safe_state
 from utils.system_utils import is_debug_mode
@@ -45,6 +45,11 @@ if __name__ == "__main__":
         pp, _ = ArgumentParser(scalarflow.PipelineParams, allow_abbrev=False).parse_known_args()
         op, _ = ArgumentParser(scalarflow.OptimizationParams, allow_abbrev=False).parse_known_args()
         scalarflow.training(source_path, model_path, mp, op, pp, args.start_checkpoint)
+    elif dataset_type == DatasetType.ColmapScene:
+        mp, _ = ArgumentParser(colmap.ModelParams, allow_abbrev=False).parse_known_args()
+        pp, _ = ArgumentParser(colmap.PipelineParams, allow_abbrev=False).parse_known_args()
+        op, _ = ArgumentParser(colmap.OptimizationParams, allow_abbrev=False).parse_known_args()
+        colmap.training(source_path, model_path, mp, op, pp, args.start_checkpoint)
     else:
         raise ValueError(f"Unsupported dataset type: {dataset_type}")
 
