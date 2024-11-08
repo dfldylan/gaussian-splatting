@@ -348,7 +348,7 @@ class Gaussfluids(GaussfluidsModel):
 
     def reset_opacity(self, value=0.01):
         value = np.clip(value, a_max=0.999, a_min=0.001)
-        opacities_new = inverse_sigmoid(torch.min(self.get_opacity, torch.ones_like(self.get_opacity) * value))
+        opacities_new = self._inverse_opacity_activation(torch.min(self.get_opacity, torch.ones_like(self.get_opacity) * value))
         optimizable_tensors = self.replace_tensor_to_optimizer(opacities_new, "opacity")
         self.opacity = optimizable_tensors["opacity"]
 

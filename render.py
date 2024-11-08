@@ -16,15 +16,35 @@ from pipeline import scalarflow
 from renderer import render
 from utils.general_utils import safe_state
 from utils.system_utils import is_debug_mode
+from utils.math import ActivationType
+
+
+def handle_factor(factor, value: torch.Tensor) -> torch.Tensor:
+    if factor.endswith('%'):
+        # Remove the "%" and convert to float to calculate the percentage value.
+        percentage = float(factor.rstrip('%'))
+        relative_value = value * (percentage / 100.0)
+        return relative_value
+    else:
+        # Treat as an absolute value.
+        absolute_value = float(factor) * torch.ones_like(value)
+        return absolute_value
 
 
 def render_set(pp: PipelineParams, frame_index, shoot: ShootModel, background, render_path, gts_path, gaussfluids,
-               frame_time, scaling_factor=1.0):
+               frame_time, scaling_factor=None, opacity_factor=None):
     with torch.no_grad():
         gaussians: model.Gaussians = gaussfluids.get_static(frame_time)
-        if scaling_factor != 1.0:
-            new_scaling = gaussians._inverse_scaling_activation(scaling_factor * gaussians.get_scaling)
-            gaussians.scaling = new_scaling
+        if scaling_factor is not None:
+            new_scaling = handle_factor(scaling_factor, gaussians.get_scaling)
+            new_scaling = gaussians._inverse_scaling_activation(torch.min(new_scaling, torch.ones_like(
+                new_scaling)) if gaussians.scaling_activation_type == ActivationType.SIGMOID else new_scaling)
+            gaussians.scaling = new_scaling.cuda()
+        if opacity_factor is not None:
+            new_opacity = handle_factor(opacity_factor, gaussians.get_opacity)
+            new_opacity = gaussians._inverse_opacity_activation(torch.min(new_opacity, torch.ones_like(
+                new_opacity)) if gaussians.opacity_activation_type == ActivationType.SIGMOID else new_opacity)
+            gaussians.opacity = new_opacity.cuda()
         rendering = render(shoot, gaussians, pp, background)["render"]
         gt = shoot.image[0:3, :, :]
         torchvision.utils.save_image(rendering, os.path.join(render_path, '{0:04d}'.format(frame_index) + ".png"))
@@ -37,7 +57,8 @@ class RenderingOptions:
     model_path: str = field(metadata={"args": ["-m"], "help": "Model path", "dest": "model_path", "required": True})
     start_checkpoint: str = field(metadata={"help": "Path to the start checkpoint", "dest": "start_checkpoint",
                                             "required": True})
-    scaling_factor: float = field(metadata={"help": "Scaling factor", "dest": "scaling_factor"}, default=1.0)
+    scaling_factor: str = field(metadata={"help": "Scaling factor", "dest": "scaling_factor"}, default=None)
+    opacity_factor: str = field(metadata={"help": "Opacity factor", "dest": "opacity_factor"}, default=None)
 
 
 if __name__ == "__main__":
@@ -59,7 +80,7 @@ if __name__ == "__main__":
         pp, _ = ArgumentParser(scalarflow.PipelineParams, allow_abbrev=False).parse_known_args()
         op, _ = ArgumentParser(scalarflow.OptimizationParams, allow_abbrev=False).parse_known_args()
         scalarflow.rendering(source_path, os.path.join(model_path, "output"), mp, op, pp, args.start_checkpoint,
-                             args.scaling_factor)
+                             args.scaling_factor, args.opacity_factor)
     elif dataset_type == DatasetType.Neurofluid:
         pass
         # mp, _ = ArgumentParser(neurofluid.ModelParams, allow_abbrev=False).parse_known_args()

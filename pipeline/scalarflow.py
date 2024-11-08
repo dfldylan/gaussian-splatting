@@ -1,21 +1,21 @@
+import logging
 import os.path
-
-import torch
+from dataclasses import dataclass
 from random import choice
 
-import arguments.__init__
-from utils.loss_utils import l1_loss, ssim, density_loss, aniso_loss, vol_loss, opacity_loss, feature_loss
-from renderer import render
-from dataset import DataLoader, DatasetInfo
-from model import Gaussfluids
-from dataset.cameras import ShootModel
+import torch
 from tqdm import tqdm
+
 import arguments
 from arguments.__init__ import ModelParams
-from renderer.network_tools import handle_network
-from utils.system_utils import dump_cfg
+from dataset import DataLoader, DatasetInfo
+from dataset.cameras import ShootModel
 from dataset.readers import readScalarFlowInfo
-from dataclasses import dataclass
+from model import Gaussfluids
+from renderer import render
+from renderer.network_tools import handle_network
+from utils.loss_utils import l1_loss, ssim, density_loss, aniso_loss, vol_loss, opacity_loss, feature_loss
+from utils.system_utils import dump_cfg
 
 
 @dataclass
@@ -146,10 +146,14 @@ def training(source_path, model_path, mdl: ModelParams, opt: OptimizationParams,
                 print("\n[ITER {}] Saving Checkpoint".format(iteration))
                 torch.save((gaussfluids.save(), iteration), model_path + "/chkpnt" + str(iteration) + ".pth")
 
+
 from render import render_set
-def rendering(source_path, output_path, mdl: ModelParams, opt: OptimizationParams, pipe: PipelineParams, checkpoint, scaling_factor=1.0):
+
+
+def rendering(source_path, output_path, mdl: ModelParams, opt: OptimizationParams, pipe: PipelineParams, checkpoint,
+              scaling_factor=None, opacity_factor=None):
     dataset: DatasetInfo = readScalarFlowInfo(source_path, pipe.calib_folder)
-    dataloader = DataLoader(mdl.data_device, dataset)
+    dataloader = DataLoader(mdl.data_device, dataset, shuffle=False)
     if opt.end_frame == -1:
         opt.end_frame = dataloader.time_info.num_frames - 1
     gaussfluids = Gaussfluids(mdl.sh_degree, channel=1, base_time=dataloader.time_info.get_time(opt.end_frame),
@@ -159,6 +163,7 @@ def rendering(source_path, output_path, mdl: ModelParams, opt: OptimizationParam
     gaussfluids.setup(opt, dataloader.cameras_extent, position_lr_max_steps=opt.iterations, opt_dict=opt_dict)
 
     shoot: ShootModel = dataloader.getTrainCameras()[0]
+    logging.info(f"Using {shoot.shoot_info.image_name} as cam.")
     render_path = os.path.join(output_path, "renders")
     gts_path = os.path.join(output_path, "gt")
     os.makedirs(render_path, exist_ok=True)
@@ -171,5 +176,5 @@ def rendering(source_path, output_path, mdl: ModelParams, opt: OptimizationParam
         print(frame_index)
         frame_time = dataloader.time_info.get_time(frame_index)
         render_set(pipe, frame_index, background=background, render_path=render_path, gts_path=gts_path,
-                   gaussfluids=gaussfluids, shoot=shoot, frame_time=frame_time,scaling_factor=scaling_factor)
-
+                   gaussfluids=gaussfluids, shoot=shoot, frame_time=frame_time, scaling_factor=scaling_factor,
+                   opacity_factor=opacity_factor)
