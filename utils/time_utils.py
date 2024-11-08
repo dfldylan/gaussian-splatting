@@ -1,11 +1,12 @@
 from typing import NamedTuple
 
+
 class TimeSeriesInfo(NamedTuple):
     start_time: float
     time_step: float
     num_frames: int
 
-    def get_time(self, frame_id):
+    def get_time(self, frame_id) -> float:
         return self.start_time + frame_id * self.time_step
 
     def get_frame_id(self, time):

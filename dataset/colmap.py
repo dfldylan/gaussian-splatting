@@ -8,10 +8,17 @@
 #
 # For inquiries contact  george.drettakis@inria.fr
 #
+import os
+import sys
+from itertools import repeat
+from multiprocessing import Pool
 
 import numpy as np
 import collections
 import struct
+
+from dataset import ShootInfo
+from utils.graphics_utils import focal2fov
 
 CameraModel = collections.namedtuple(
     "CameraModel", ["model_id", "model_name", "num_params"])
@@ -299,3 +306,58 @@ def read_colmap_bin_array(path):
         array = np.fromfile(fid, np.float32)
     array = array.reshape((width, height, channels), order="F")
     return np.transpose(array, (1, 0, 2)).squeeze()
+
+
+def _process_colmap_camera(key, cam_extrinsics, cam_intrinsics, images_folder, time_step):
+    sys.stdout.write('\r')
+    # the exact output you're looking for:
+    sys.stdout.write("Reading camera {}/{}".format(key + 1, len(cam_extrinsics)))
+    sys.stdout.flush()
+
+    extr = cam_extrinsics[key]
+    intr = cam_intrinsics[extr.camera_id]
+    height = intr.height
+    width = intr.width
+
+    uid = intr.id
+    R = np.transpose(qvec2rotmat(extr.qvec))
+    T = np.array(extr.tvec)
+
+    if intr.model == "SIMPLE_PINHOLE":
+        focal_length_x = intr.params[0]
+        FovY = focal2fov(focal_length_x, height)
+        FovX = focal2fov(focal_length_x, width)
+    elif intr.model == "PINHOLE":
+        focal_length_x = intr.params[0]
+        focal_length_y = intr.params[1]
+        FovY = focal2fov(focal_length_y, height)
+        FovX = focal2fov(focal_length_x, width)
+    else:
+        assert False, "Colmap camera model not handled: only undistorted datasets (PINHOLE or SIMPLE_PINHOLE cameras) supported!"
+
+    image_path = os.path.join(images_folder, extr.name)
+    image_name = os.path.basename(image_path).split(".")[0]
+
+    if time_step:
+        cam_info = ShootInfo(uid=uid, R=R, T=T, FovY=FovY, FovX=FovX, image=None,
+                             image_path=image_path, image_name=image_name, width=width, height=height,
+                             time=time_step * extr.frame_id)
+    else:
+        cam_info = ShootInfo(uid=uid, R=R, T=T, FovY=FovY, FovX=FovX, image=None,
+                             image_path=image_path, image_name=image_name, width=width, height=height, time=0)
+    return cam_info
+
+
+def readColmapCameras(cam_extrinsics, cam_intrinsics, images_folder, time_step=None):
+    cam_infos = []
+
+    # 创建进程池
+    with Pool() as pool:
+        # 使用pool.starmap并行处理
+        results = pool.starmap(_process_colmap_camera,
+                               zip(cam_extrinsics.keys(), repeat(cam_extrinsics), repeat(cam_intrinsics),
+                                   repeat(images_folder), repeat(time_step)))
+        cam_infos.extend(results)
+
+    sys.stdout.write('\n')
+    return cam_infos

@@ -2,22 +2,22 @@ import copy
 import torch
 import numpy as np
 import matplotlib.pyplot as plt
-from scene import Gaussfluids
-from gaussian_renderer import render, network_gui
-from arguments import ModelParams,OptimizationParams
-from scene.cameras import MiniCam
-from utils.tools import similarity_mask, classify_mask
+from model import Gaussfluids
+from model import Gaussians
+from renderer import render, network_gui
+from arguments.__init__ import OptimizationParams
+from dataset.cameras import MiniCam
+from utils.tools import similarity_mask
 from utils.sh_utils import RGB2SH
 
 
-def build_gaussframe(gaussians=None, trans=None, time=None, gaussians_bg=None):
+def build_gaussframe(gaussians=None, time=None, gaussians_bg=None):
     gaussians_bg: Gaussfluids
     gaussians: Gaussfluids
     if gaussians_bg is not None:
         gaussframe_0 = gaussians_bg.move_0()
     if gaussians is not None and gaussians.is_available:
-        dt_xyz, dt_scaling, dt_rotation = trans(time)
-        gaussframe = gaussians.move(dt_xyz, dt_scaling, dt_rotation)
+        gaussframe: Gaussians = gaussians.get_static(time)
     if gaussians_bg is not None:
         if gaussians is not None and gaussians.is_available:
             gaussframe_0.add_gaussians(gaussframe)
@@ -28,9 +28,8 @@ def build_gaussframe(gaussians=None, trans=None, time=None, gaussians_bg=None):
         return None
 
 
-def handle_network(pipe, gaussians_bg, gaussians, trans, time_info, background, iter_finished, lp: ModelParams,
-                   opt:OptimizationParams):
-    min_opacity = opt.min_opacity
+def handle_network(pipe, gaussians_bg, gaussfluids, time_info, background, iter_finished, source_path, start_frame,
+                   end_frame, min_opacity):
     mask_manual = None
     bg_op = 0.005
     hl_op = 0.5
@@ -42,30 +41,35 @@ def handle_network(pipe, gaussians_bg, gaussians, trans, time_info, background, 
             custom_cam: MiniCam
             custom_cam, do_training, pipe.convert_SHs_python, pipe.compute_cov3D_python, keep_alive, scaling_modifer, frame, checkbox_1, checkbox_2, checkbox_3, slider_float_1, slider_float_2 = network_gui.receive()
             if custom_cam != None:
-                time = time_info.get_time(frame / 100 * (opt.end_frame - opt.start_frame) + opt.start_frame)
+                time = time_info.get_time(frame / 100 * (end_frame - start_frame) + start_frame)
+                gaussians = gaussfluids.get_static(time)
                 if checkbox_1 is False and checkbox_2 is False:
-                    gaussframe = build_gaussframe(gaussians_bg=gaussians_bg, gaussians=gaussians, trans=trans,
-                                                  time=time)
-                elif checkbox_1 is False and checkbox_2 is True:
-                    gaussframe = build_gaussframe(gaussians_bg=gaussians_bg)
+                    ret = render(custom_cam, gaussians, pipe, background, scaling_modifer)
                 elif checkbox_1 is True and checkbox_2 is False:
-                    gaussframe = build_gaussframe(gaussians=gaussians, trans=trans, time=time)
+                    _background = torch.ones_like(background)
+                    gaussians.features_dc = torch.zeros_like(gaussians.features_dc)
+                    gaussians.opacity = torch.abs(gaussians.opacity)
+                    ret = render(custom_cam, gaussians, pipe, _background, scaling_modifer)
+
+                elif checkbox_1 is False and checkbox_2 is True:
+                    gaussians = build_gaussframe(gaussians_bg=gaussians_bg)
+                    ret = render(custom_cam, gaussians, pipe, background, scaling_modifer)
+
                 elif checkbox_1 is True and checkbox_2 is True:
-                    _gaussians: Gaussfluids = copy.deepcopy(gaussians)
-                    _trans = copy.deepcopy(trans)
-                    _gaussians.prune_min_opacity(min_opacity, trans=_trans)
+                    _gaussians: Gaussfluids = copy.deepcopy(gaussfluids)
+                    _gaussians.prune_min_opacity(min_opacity)
                     if mask_manual is not None:
                         opacity = np.full(_gaussians.get_opacity.shape, bg_op)  # 初始化所有点的不透明度为0.05
                         opacity[mask_manual] = hl_op
                         _gaussians.set_opacity(value=torch.tensor(opacity, dtype=torch.float, device="cuda"))
 
-                    gaussframe = build_gaussframe(gaussians=_gaussians, trans=_trans, time=time)
+                    gaussians = build_gaussframe(gaussians=_gaussians, time=time)
+                    ret = render(custom_cam, gaussians, pipe, background, scaling_modifer)
 
-                ret = render(custom_cam, gaussframe, pipe, background, scaling_modifer)
                 net_image = ret["render"]
                 net_image_bytes = memoryview(
                     (torch.clamp(net_image, min=0, max=1.0) * 255).byte().permute(1, 2, 0).contiguous().cpu().numpy())
-            network_gui.send(net_image_bytes, lp.source_path)
+            network_gui.send(net_image_bytes, source_path)
             if do_training and (not iter_finished or not keep_alive):
                 break
         except Exception as e:

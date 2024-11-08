@@ -9,12 +9,12 @@
 # For inquiries contact  george.drettakis@inria.fr
 #
 
+import os
+from argparse import Namespace
 from errno import EEXIST
 from os import makedirs, path
-import os
-import uuid
-from argparse import Namespace
-from arguments import ModelParams, OptimizationParams
+
+from arguments.__init__ import ModelParams, OptimizationParams
 
 try:
     from torch.utils.tensorboard import SummaryWriter
@@ -40,30 +40,12 @@ def searchForMaxIteration(folder):
     return max(saved_iters)
 
 
-def prepare_output_and_logger(args):
-    if not args.model_path:
-        if os.getenv('OAR_JOB_ID'):
-            unique_str = os.getenv('OAR_JOB_ID')
-        else:
-            unique_str = str(uuid.uuid4())
-        args.model_path = os.path.join("../data/output/", unique_str[0:10])
-
-    # Set up output folder
-    print("Output folder: {}".format(args.model_path))
-    os.makedirs(args.model_path, exist_ok=True)
-    with open(os.path.join(args.model_path, "cfg_args"), 'w') as cfg_log_f:
+def dump_cfg(args, folder):
+    with open(os.path.join(folder, "cfg_args"), 'w') as cfg_log_f:
         cfg_log_f.write(str(Namespace(**vars(args))))
 
-    # Create Tensorboard writer
-    tb_writer = None
-    if TENSORBOARD_FOUND:
-        tb_writer = SummaryWriter(args.model_path)
-    else:
-        print("Tensorboard not available: not logging progress")
-    return tb_writer
 
-
-def merge_args(dataset: ModelParams, opt: OptimizationParams, conf,fluid_setup):
+def merge_args(dataset: ModelParams, opt: OptimizationParams, conf, fluid_setup):
     opt.start_frame = conf[fluid_setup]['start_frame']
     opt.end_frame = conf[fluid_setup]['end_frame']
 
@@ -71,9 +53,16 @@ def merge_args(dataset: ModelParams, opt: OptimizationParams, conf,fluid_setup):
     opt.static_start = conf['start_frame']
     opt.static_end = conf['end_frame']
 
-    dataset.dynamics_color = [item / 256 for item in conf['rgb']]
-    dataset.target_radius = conf['target_radius']
+    pipe.dynamics_color = [item / 256 for item in conf['rgb']]
+    opt.target_radius = conf['target_radius']
     opt.min_opacity = conf['min_opacity']
     opt.eps = conf['eps']
 
     return dataset
+
+
+import sys
+
+
+def is_debug_mode():
+    return sys.gettrace() is not None
