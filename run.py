@@ -1,16 +1,14 @@
 import logging
 import os
+from dataclasses import dataclass, field
 
 import torch
 from argparse_dataclass import ArgumentParser
-from dataclasses import dataclass, field
 
-import arguments
-import arguments.__init__
-from renderer import network_gui
 from dataset import DatasetType, detect_dataset_type
-from utils.general_utils import safe_state
 from pipeline import scalarflow
+from renderer import network_gui
+from utils.general_utils import safe_state
 from utils.system_utils import is_debug_mode
 
 

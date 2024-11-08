@@ -17,7 +17,6 @@ dependencies:
   - fvcore
   - iopath
   - pytorch3d=0.7.1
-  - opencv
   - pip:
     - submodules/diff-gaussian-rasterization
     - submodules/simple-knn

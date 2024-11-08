@@ -145,3 +145,31 @@ def training(source_path, model_path, mdl: ModelParams, opt: OptimizationParams,
             if iteration % 1000 == 0:
                 print("\n[ITER {}] Saving Checkpoint".format(iteration))
                 torch.save((gaussfluids.save(), iteration), model_path + "/chkpnt" + str(iteration) + ".pth")
+
+from render import render_set
+def rendering(source_path, output_path, mdl: ModelParams, opt: OptimizationParams, pipe: PipelineParams, checkpoint, scaling_factor=1.0):
+    dataset: DatasetInfo = readScalarFlowInfo(source_path, pipe.calib_folder)
+    dataloader = DataLoader(mdl.data_device, dataset)
+    if opt.end_frame == -1:
+        opt.end_frame = dataloader.time_info.num_frames - 1
+    gaussfluids = Gaussfluids(mdl.sh_degree, channel=1, base_time=dataloader.time_info.get_time(opt.end_frame),
+                              hidden_sizes=mdl.hidden_sizes, track_channel=mdl.track_channel)
+    (model_params, first_iter) = torch.load(checkpoint)
+    opt_dict = gaussfluids.restore(model_params)
+    gaussfluids.setup(opt, dataloader.cameras_extent, position_lr_max_steps=opt.iterations, opt_dict=opt_dict)
+
+    shoot: ShootModel = dataloader.getTrainCameras()[0]
+    render_path = os.path.join(output_path, "renders")
+    gts_path = os.path.join(output_path, "gt")
+    os.makedirs(render_path, exist_ok=True)
+    os.makedirs(gts_path, exist_ok=True)
+
+    bg_color = [1, 1, 1] if mdl.white_background else [0, 0, 0]
+    background = torch.tensor(bg_color, dtype=torch.float32, device="cuda")
+
+    for frame_index in range(dataloader.time_info.num_frames):
+        print(frame_index)
+        frame_time = dataloader.time_info.get_time(frame_index)
+        render_set(pipe, frame_index, background=background, render_path=render_path, gts_path=gts_path,
+                   gaussfluids=gaussfluids, shoot=shoot, frame_time=frame_time,scaling_factor=scaling_factor)
+

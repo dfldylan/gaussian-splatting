@@ -382,9 +382,6 @@ def rays_txt_to_camera(rays_filepath):
     return width, height, R, T, fovy, fovx
 
 
-import cv2  # 使用OpenCV进行模糊处理
-
-
 def readCamerasFromScalarFlow(base_path: str, calib_folder, bg_threshold=8):
     """
     Generate a list of CameraInfo objects based on rays calibration data.

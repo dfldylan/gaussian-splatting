@@ -18,7 +18,6 @@ from dataset.colmap import read_extrinsics_text, read_intrinsics_text, read_extr
     read_intrinsics_binary, read_points3D_binary, read_points3D_text, TimedImage, readColmapCameras
 from dataset.tools import fetchPly, storePly, handle_time, getNerfppNorm, readCamerasFromTransforms, gen_random_points, \
     readCamerasFromScalarFlow, loadPly
-from utils.math import max_distance
 from utils.sh_utils import SH2RGB
 from utils.time_utils import TimeSeriesInfo
 
