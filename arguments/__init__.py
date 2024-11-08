@@ -6,7 +6,7 @@ from typing import List, Optional
 class ModelParams():
     # Pipeline parameters
     data_device: str = "cuda"
-    sh_degree: int = 3
+    sh_degree: int = 1
     white_background: bool = False
 
     # Model parameters

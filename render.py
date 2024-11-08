@@ -3,20 +3,14 @@ import os
 from dataclasses import dataclass, field
 
 import torch
-import torchvision
 from argparse_dataclass import ArgumentParser
 
-import model
-from arguments import PipelineParams
-from dataset import DataLoader, ShootModel
 from dataset import DatasetType, detect_dataset_type
 # from dataset.readers import readNeurofluidInfo
 from pipeline import scalarflow
 # from pipeline import neurofluid
-from renderer import render
 from utils.general_utils import safe_state
 from utils.system_utils import is_debug_mode
-from utils.math import ActivationType
 
 
 def handle_factor(factor, value: torch.Tensor) -> torch.Tensor:
@@ -31,24 +25,24 @@ def handle_factor(factor, value: torch.Tensor) -> torch.Tensor:
         return absolute_value
 
 
-def render_set(pp: PipelineParams, frame_index, shoot: ShootModel, background, render_path, gts_path, gaussfluids,
-               frame_time, scaling_factor=None, opacity_factor=None):
-    with torch.no_grad():
-        gaussians: model.Gaussians = gaussfluids.get_static(frame_time)
-        if scaling_factor is not None:
-            new_scaling = handle_factor(scaling_factor, gaussians.get_scaling)
-            new_scaling = gaussians._inverse_scaling_activation(torch.min(new_scaling, torch.ones_like(
-                new_scaling)) if gaussians.scaling_activation_type == ActivationType.SIGMOID else new_scaling)
-            gaussians.scaling = new_scaling.cuda()
-        if opacity_factor is not None:
-            new_opacity = handle_factor(opacity_factor, gaussians.get_opacity)
-            new_opacity = gaussians._inverse_opacity_activation(torch.min(new_opacity, torch.ones_like(
-                new_opacity)) if gaussians.opacity_activation_type == ActivationType.SIGMOID else new_opacity)
-            gaussians.opacity = new_opacity.cuda()
-        rendering = render(shoot, gaussians, pp, background)["render"]
-        gt = shoot.image[0:3, :, :]
-        torchvision.utils.save_image(rendering, os.path.join(render_path, '{0:04d}'.format(frame_index) + ".png"))
-        torchvision.utils.save_image(gt, os.path.join(gts_path, '{0:04d}'.format(frame_index) + ".png"))
+# def render_set(pp: PipelineParams, frame_index, shoot: ShootModel, background, render_path, gts_path, gaussfluids,
+#                frame_time, scaling_factor=None, opacity_factor=None, gs_color_sh:torch.Tensor=None):
+#     with torch.no_grad():
+#         gaussians: model.Gaussians = gaussfluids.get_static(frame_time)
+#         if scaling_factor is not None:
+#             new_scaling = handle_factor(scaling_factor, gaussians.get_scaling)
+#             new_scaling = gaussians._inverse_scaling_activation(torch.min(new_scaling, torch.ones_like(
+#                 new_scaling)) if gaussians.scaling_activation_type == ActivationType.SIGMOID else new_scaling)
+#             gaussians.scaling = new_scaling.cuda()
+#         if opacity_factor is not None:
+#             new_opacity = handle_factor(opacity_factor, gaussians.get_opacity)
+#             new_opacity = gaussians._inverse_opacity_activation(torch.min(new_opacity, torch.ones_like(
+#                 new_opacity)) if gaussians.opacity_activation_type == ActivationType.SIGMOID else new_opacity)
+#             gaussians.opacity = new_opacity.cuda()
+#         rendering = render(shoot, gaussians, pp, background)["render"]
+#         gt = shoot.image[0:3, :, :]
+#         torchvision.utils.save_image(rendering, os.path.join(render_path, '{0:04d}'.format(frame_index) + ".png"))
+#         torchvision.utils.save_image(gt, os.path.join(gts_path, '{0:04d}'.format(frame_index) + ".png"))
 
 
 @dataclass
@@ -59,6 +53,8 @@ class RenderingOptions:
                                             "required": True})
     scaling_factor: str = field(metadata={"help": "Scaling factor", "dest": "scaling_factor"}, default=None)
     opacity_factor: str = field(metadata={"help": "Opacity factor", "dest": "opacity_factor"}, default=None)
+    bg_color: str = field(metadata={"help": "Background color", "dest": "bg_color"}, default=None)
+    gs_color: str = field(metadata={"help": "Gaussis color", "dest": "gs_color"}, default=None)
 
 
 if __name__ == "__main__":
@@ -80,7 +76,7 @@ if __name__ == "__main__":
         pp, _ = ArgumentParser(scalarflow.PipelineParams, allow_abbrev=False).parse_known_args()
         op, _ = ArgumentParser(scalarflow.OptimizationParams, allow_abbrev=False).parse_known_args()
         scalarflow.rendering(source_path, os.path.join(model_path, "output"), mp, op, pp, args.start_checkpoint,
-                             args.scaling_factor, args.opacity_factor)
+                             args.scaling_factor, args.opacity_factor, args.bg_color, args.gs_color)
     elif dataset_type == DatasetType.Neurofluid:
         pass
         # mp, _ = ArgumentParser(neurofluid.ModelParams, allow_abbrev=False).parse_known_args()

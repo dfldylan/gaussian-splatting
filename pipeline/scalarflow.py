@@ -15,6 +15,7 @@ from model import Gaussfluids
 from renderer import render
 from renderer.network_tools import handle_network
 from utils.loss_utils import l1_loss, ssim, density_loss, aniso_loss, vol_loss, opacity_loss, feature_loss
+from utils.sh_utils import rgb_str_to_sh_tensor
 from utils.system_utils import dump_cfg
 
 
@@ -147,11 +148,15 @@ def training(source_path, model_path, mdl: ModelParams, opt: OptimizationParams,
                 torch.save((gaussfluids.save(), iteration), model_path + "/chkpnt" + str(iteration) + ".pth")
 
 
-from render import render_set
+from render import handle_factor
+from matplotlib.colors import to_rgb
+import model
+from utils.math import ActivationType
+import torchvision
 
 
 def rendering(source_path, output_path, mdl: ModelParams, opt: OptimizationParams, pipe: PipelineParams, checkpoint,
-              scaling_factor=None, opacity_factor=None):
+              scaling_factor=None, opacity_factor=None, bg_color=None, gs_color=None):
     dataset: DatasetInfo = readScalarFlowInfo(source_path, pipe.calib_folder)
     dataloader = DataLoader(mdl.data_device, dataset, shuffle=False)
     if opt.end_frame == -1:
@@ -169,12 +174,36 @@ def rendering(source_path, output_path, mdl: ModelParams, opt: OptimizationParam
     os.makedirs(render_path, exist_ok=True)
     os.makedirs(gts_path, exist_ok=True)
 
-    bg_color = [1, 1, 1] if mdl.white_background else [0, 0, 0]
+    bg_color = to_rgb(bg_color) if bg_color is not None else to_rgb("white") if mdl.white_background else to_rgb(
+        "black")
     background = torch.tensor(bg_color, dtype=torch.float32, device="cuda")
+    gs_color_sh = rgb_str_to_sh_tensor(gs_color) if gs_color is not None else None
 
     for frame_index in range(dataloader.time_info.num_frames):
         print(frame_index)
         frame_time = dataloader.time_info.get_time(frame_index)
-        render_set(pipe, frame_index, background=background, render_path=render_path, gts_path=gts_path,
-                   gaussfluids=gaussfluids, shoot=shoot, frame_time=frame_time, scaling_factor=scaling_factor,
-                   opacity_factor=opacity_factor)
+        with torch.no_grad():
+            gaussians: model.Gaussians = gaussfluids.get_static(frame_time)
+            if scaling_factor is not None:
+                new_scaling = handle_factor(scaling_factor, gaussians.get_scaling)
+                new_scaling = gaussians._inverse_scaling_activation(torch.min(new_scaling, torch.ones_like(
+                    new_scaling)) if gaussians.scaling_activation_type == ActivationType.SIGMOID else new_scaling)
+                gaussians.scaling = new_scaling.cuda()
+            if opacity_factor is not None:
+                new_opacity = handle_factor(opacity_factor, gaussians.get_opacity)
+                new_opacity = gaussians._inverse_opacity_activation(torch.min(new_opacity, torch.ones_like(
+                    new_opacity)) if gaussians.opacity_activation_type == ActivationType.SIGMOID else new_opacity)
+                gaussians.opacity = new_opacity.cuda()
+            if gs_color_sh is not None:
+                if gs_color_sh.shape[0] == 3:
+                    gaussians.channel = 3
+                    gaussians.features_dc = gs_color_sh.unsqueeze(0).unsqueeze(0).tile(gaussians.get_num, 1, 1)
+                    gaussians.features_rest = gaussians.features_rest.tile(1, 1, 3)
+                elif gs_color_sh.shape[0] == 1:
+                    gaussians.features_dc = gs_color_sh.unsqueeze(0).unsqueeze(0).tile(gaussians.get_num, 1, 1)
+                else:
+                    raise ValueError("gs_color_sh must be either 3 or 1 dimensional")
+            rendering = render(shoot, gaussians, pipe, background)["render"]
+            gt = shoot.image[0:3, :, :]
+            torchvision.utils.save_image(rendering, os.path.join(render_path, '{0:04d}'.format(frame_index) + ".png"))
+            torchvision.utils.save_image(gt, os.path.join(gts_path, '{0:04d}'.format(frame_index) + ".png"))

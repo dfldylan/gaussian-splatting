@@ -49,7 +49,7 @@ def training(mdl: ModelParams, opt: OptimizationParams, pipe, checkpoint, fluid_
     if opt.end_frame == -1:
         opt.end_frame = scene.time_info.num_frames - 1
 
-    gs_bg = Gaussfluids(mdl.sh_degree)
+    gs_bg = Gaussfluids(sh_degree=3)
     gaussians = Gaussfluids(mdl.sh_degree, base_time=scene.time_info.get_time(opt.end_frame),
                             hidden_sizes=mdl.hidden_sizes, track_channel=mdl.track_channel)
 
