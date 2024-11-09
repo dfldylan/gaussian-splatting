@@ -165,7 +165,6 @@ def rendering(source_path, output_path, mdl: ModelParams, opt: OptimizationParam
                               hidden_sizes=mdl.hidden_sizes, track_channel=mdl.track_channel)
     (model_params, first_iter) = torch.load(checkpoint)
     opt_dict = gaussfluids.restore(model_params)
-    gaussfluids.setup(opt, dataloader.cameras_extent, position_lr_max_steps=opt.iterations, opt_dict=opt_dict)
 
     shoot: ShootModel = dataloader.getTrainCameras()[0]
     logging.info(f"Using {shoot.shoot_info.image_name} as cam.")
@@ -207,3 +206,35 @@ def rendering(source_path, output_path, mdl: ModelParams, opt: OptimizationParam
             gt = shoot.image[0:3, :, :]
             torchvision.utils.save_image(rendering, os.path.join(render_path, '{0:04d}'.format(frame_index) + ".png"))
             torchvision.utils.save_image(gt, os.path.join(gts_path, '{0:04d}'.format(frame_index) + ".png"))
+
+
+from utils.time_utils import TimeSeriesInfo
+import json
+import numpy as np
+
+
+def dump_npz_set(source_path, output_path, mdl: ModelParams, opt: OptimizationParams, pipe: PipelineParams,
+                 checkpoint=None, time_info: TimeSeriesInfo = None, ply=True):
+    with torch.no_grad():
+        dataset: DatasetInfo = readScalarFlowInfo(source_path, pipe.calib_folder)
+        dataloader = DataLoader(mdl.data_device, dataset, shuffle=False)
+        if opt.end_frame == -1:
+            opt.end_frame = dataloader.time_info.num_frames - 1
+        gaussfluids = Gaussfluids(mdl.sh_degree, channel=1, base_time=dataloader.time_info.get_time(opt.end_frame),
+                                  hidden_sizes=mdl.hidden_sizes, track_channel=mdl.track_channel)
+        (model_params, first_iter) = torch.load(checkpoint)
+        opt_dict = gaussfluids.restore(model_params)
+
+        time_info = dataloader.time_info if time_info is None else time_info
+
+        save_path = os.path.join(output_path, 'npz')
+        os.makedirs(save_path, exist_ok=True)
+
+        json.dump(time_info._asdict(), open(os.path.join(save_path, 'time_info.json'), 'w'))
+
+        for i in range(opt.start_frame, opt.end_frame + 1):
+            time = time_info.start_time + i * time_info.time_step
+            logging.info('Frame {}, Time {}'.format(i, time))
+            gaussians = gaussfluids.get_static(time)
+            gaussians.save_ply(os.path.join(save_path, 'ply', '{:04}.ply'.format(i))) if ply else None
+            np.savez(os.path.join(save_path, '{:04}.npz'.format(i)), pos=gaussians.get_xyz.cpu().detach().numpy())

@@ -14,7 +14,7 @@
     <option name="ADD_SOURCE_ROOTS" value="true" />
     <EXTENSION ID="PythonCoverageRunConfigurationExtension" runner="coverage.py" />
     <option name="SCRIPT_NAME" value="$PROJECT_DIR$/render.py" />
-    <option name="PARAMETERS" value="-s /workspace/_datasets/ScalarFlow/sim_000000 -m /workspace/gaussfluids/data/scalarflow --calib-folder /workspace/_datasets/ScalarFlow/calib20190813 --start-checkpoint /workspace/gaussfluids/data/scalarflow/chkpnt200000.pth --scaling-factor 0.005 --sh-degree 3 --gs-color blue --bg-color white" />
+    <option name="PARAMETERS" value="-s /workspace/_datasets/ScalarFlow/sim_000000 -m /workspace/gaussfluids/data/scalarflow --calib-folder /workspace/_datasets/ScalarFlow/calib20190813 --start-checkpoint /workspace/gaussfluids/data/scalarflow/chkpnt200000.pth --sh-degree 3 --gs-color #E695B3 --bg-color #A3D9E7 --opacity-factor 150%" />
     <option name="SHOW_COMMAND_LINE" value="false" />
     <option name="EMULATE_TERMINAL" value="false" />
     <option name="MODULE_MODE" value="false" />
