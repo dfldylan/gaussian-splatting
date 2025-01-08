@@ -4,9 +4,11 @@ import numpy as np
 import matplotlib.pyplot as plt
 from model import Gaussfluids
 from model import Gaussians
+from arguments import PipelineParams
 from renderer import render, network_gui
 from arguments.__init__ import OptimizationParams
 from dataset.cameras import MiniCam
+from utils.time_utils import TimeSeriesInfo
 from utils.tools import similarity_mask
 from utils.sh_utils import RGB2SH
 
@@ -28,52 +30,61 @@ def build_gaussframe(gaussians=None, time=None, gaussians_bg=None):
         return None
 
 
-def handle_network(pipe, gaussians_bg, gaussfluids, time_info, background, iter_finished, source_path, start_frame,
-                   end_frame, min_opacity):
-    mask_manual = None
-    bg_op = 0.005
-    hl_op = 0.5
+def handle_network(pipe: PipelineParams, gaussfluids: Gaussfluids, time_info: TimeSeriesInfo, bg_tensor,
+                   exit_flag, source_path, start_frame: int, end_frame: int, min_opacity, gaussians_bg=None):
+    gaussfluids_mask_cache = None
     if network_gui.conn == None:
         network_gui.try_connect()
     while network_gui.conn != None:
         try:
-            net_image_bytes = None
-            custom_cam: MiniCam
-            custom_cam, do_training, pipe.convert_SHs_python, pipe.compute_cov3D_python, keep_alive, scaling_modifer, frame, checkbox_1, checkbox_2, checkbox_3, slider_float_1, slider_float_2 = network_gui.receive()
-            if custom_cam != None:
-                time = time_info.get_time(frame / 100 * (end_frame - start_frame) + start_frame)
-                gaussians = gaussfluids.get_static(time)
-                if checkbox_1 is False and checkbox_2 is False:
-                    ret = render(custom_cam, gaussians, pipe, background, scaling_modifer)
-                elif checkbox_1 is True and checkbox_2 is False:
-                    _background = torch.ones_like(background)
-                    gaussians.features_dc = torch.zeros_like(gaussians.features_dc)
-                    gaussians.opacity = torch.abs(gaussians.opacity)
-                    ret = render(custom_cam, gaussians, pipe, _background, scaling_modifer)
-
-                elif checkbox_1 is False and checkbox_2 is True:
-                    gaussians = build_gaussframe(gaussians_bg=gaussians_bg)
-                    ret = render(custom_cam, gaussians, pipe, background, scaling_modifer)
-
-                elif checkbox_1 is True and checkbox_2 is True:
-                    _gaussians: Gaussfluids = copy.deepcopy(gaussfluids)
-                    _gaussians.prune_min_opacity(min_opacity)
-                    if mask_manual is not None:
-                        opacity = np.full(_gaussians.get_opacity.shape, bg_op)  # 初始化所有点的不透明度为0.05
-                        opacity[mask_manual] = hl_op
-                        _gaussians.set_opacity(value=torch.tensor(opacity, dtype=torch.float, device="cuda"))
-
-                    gaussians = build_gaussframe(gaussians=_gaussians, time=time)
-                    ret = render(custom_cam, gaussians, pipe, background, scaling_modifer)
-
-                net_image = ret["render"]
-                net_image_bytes = memoryview(
-                    (torch.clamp(net_image, min=0, max=1.0) * 255).byte().permute(1, 2, 0).contiguous().cpu().numpy())
-            network_gui.send(net_image_bytes, source_path)
-            if do_training and (not iter_finished or not keep_alive):
+            loop, exitable = network_receive_render_send(source_path, pipe, time_info, start_frame, end_frame,
+                                                         gaussfluids, bg_tensor, gaussians_bg, min_opacity,
+                                                         gaussfluids_mask_cache)
+            if not loop and (not exit_flag or exitable):
                 break
         except Exception as e:
             network_gui.conn = None
+
+
+def network_receive_render_send(source_path, pipe: PipelineParams, time_info: TimeSeriesInfo, start_frame: int,
+                                end_frame: int, gaussfluids: Gaussfluids, background, gaussians_bg=None,
+                                min_opacity: float = 0.005, gaussfluids_mask_cache=None, bg_op=0.005, obj_op=0.5):
+    net_image_bytes = None
+    custom_cam: MiniCam
+    custom_cam, no_loop, pipe.convert_SHs_python, pipe.compute_cov3D_python, no_exit, scaling_modifer, frame, checkbox_1, checkbox_2, checkbox_3, slider_float_1, slider_float_2 = network_gui.receive()
+    loop = not no_loop
+    exitable = not no_exit
+    if custom_cam != None:
+        time = time_info.get_time(frame / 100 * (end_frame - start_frame) + start_frame)
+        gaussians = gaussfluids.get_static(time)
+        if checkbox_1 is False and checkbox_2 is False:
+            ret = render(custom_cam, gaussians, pipe, background, scaling_modifer)
+        elif checkbox_1 is True and checkbox_2 is False:
+            _background = torch.ones_like(background)
+            gaussians.features_dc = torch.zeros_like(gaussians.features_dc)
+            gaussians.opacity = torch.abs(gaussians.opacity)
+            ret = render(custom_cam, gaussians, pipe, _background, scaling_modifer)
+
+        elif checkbox_1 is False and checkbox_2 is True:
+            gaussians = build_gaussframe(gaussians_bg=gaussians_bg)
+            ret = render(custom_cam, gaussians, pipe, background, scaling_modifer)
+
+        elif checkbox_1 is True and checkbox_2 is True:
+            _gaussians: Gaussfluids = copy.deepcopy(gaussfluids)
+            _gaussians.prune_min_opacity(min_opacity)
+            if gaussfluids_mask_cache is not None:
+                opacity = np.full(_gaussians.get_opacity.shape, bg_op)  # 初始化所有点的不透明度为0.05
+                opacity[gaussfluids_mask_cache] = obj_op
+                _gaussians.set_opacity(value=torch.tensor(opacity, dtype=torch.float, device="cuda"))
+
+            gaussians = build_gaussframe(gaussians=_gaussians, time=time)
+            ret = render(custom_cam, gaussians, pipe, background, scaling_modifer)
+
+        net_image = ret["render"]
+        net_image_bytes = memoryview(
+            (torch.clamp(net_image, min=0, max=1.0) * 255).byte().permute(1, 2, 0).contiguous().cpu().numpy())
+    network_gui.send(net_image_bytes, source_path)
+    return loop, exitable
 
 
 def print_color(labels, unique_labels, target_color=None, color_tensor=None):

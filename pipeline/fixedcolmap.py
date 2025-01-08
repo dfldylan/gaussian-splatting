@@ -73,8 +73,8 @@ def training(mdl: ModelParams, opt: OptimizationParams, pipe, checkpoint, fluid_
     progress_bar = tqdm(range(0, opt.iterations), desc="Training progress", initial=first_iter)
     first_iter += 1
     for iteration in range(first_iter, opt.iterations + 1):
-        handle_network(pipe, gs_bg, gaussians, scene.time_info, background,
-                       (iteration == int(opt.iterations)), source_path, opt.start_frame, opt.end_frame, opt.min_opacity)
+        handle_network(pipe, gaussians, scene.time_info, background,
+                       (iteration == int(opt.iterations)), source_path, opt.start_frame, opt.end_frame, opt.min_opacity, gs_bg)
         iter_start.record()
 
         bg = torch.rand((3), device="cuda") if pipe.random_background else background
@@ -333,7 +333,7 @@ def trans_sets(mdl: ModelParams, opt: OptimizationParams, pipe, checkpoint, flui
         json.dump(time_info._asdict(), open(os.path.join(save_path, 'time_info.json'), 'w'))
 
         for i in range(opt.start_frame, opt.end_frame + 1):
-            handle_network(pipe, None, gaussians, time_info, background, (i == opt.end_frame),
+            handle_network(pipe, gaussians, time_info, background, (i == opt.end_frame),
                            source_path, opt.start_frame, opt.end_frame, opt.min_opacity)
             time = time_info.start_time + i * time_info.time_step
             print('Frame {}, Time {}'.format(i, time))

@@ -1,4 +1,3 @@
-import logging
 import os
 from dataclasses import dataclass, field
 
@@ -9,8 +8,7 @@ from dataset import DatasetType, detect_dataset_type
 # from dataset.readers import readNeurofluidInfo
 from pipeline import scalarflow
 # from pipeline import neurofluid
-from utils.general_utils import safe_state
-from utils.system_utils import is_debug_mode
+from utils.general_utils import safe_state, logging_setup
 
 
 def handle_factor(factor, value: torch.Tensor) -> torch.Tensor:
@@ -51,7 +49,7 @@ if __name__ == "__main__":
     print("Rendering " + args.model_path)
     # Initialize
     safe_state(silent=False)
-    logging.basicConfig(level=logging.DEBUG) if is_debug_mode() else logging.basicConfig(level=logging.INFO)
+    logging_setup()
 
     if dataset_type == DatasetType.ScalarFlow:
         mp, _ = ArgumentParser(scalarflow.ModelParams, allow_abbrev=False).parse_known_args()

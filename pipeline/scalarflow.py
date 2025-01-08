@@ -63,7 +63,7 @@ def training(source_path, model_path, mdl: ModelParams, opt: OptimizationParams,
     progress_bar = tqdm(range(0, opt.iterations), desc="Training progress", initial=first_iter)
     first_iter += 1
     for iteration in range(first_iter, opt.iterations + 1):
-        handle_network(pipe, None, gaussfluids, dataloader.time_info, background,
+        handle_network(pipe, gaussfluids, dataloader.time_info, background,
                        (iteration == int(opt.iterations)), source_path, opt.start_frame, opt.end_frame, opt.min_opacity)
 
         bg = torch.rand((1), device="cuda") if pipe.random_background else background
@@ -207,8 +207,8 @@ def rendering(source_path, output_path, mdl: ModelParams, opt: OptimizationParam
             torchvision.utils.save_image(gt, os.path.join(gts_path, '{0:04d}'.format(frame_index) + ".png"))
 
 
-def dump_npz_set(source_path, output_path, mdl: ModelParams, opt: OptimizationParams, pipe: PipelineParams,
-                 checkpoint=None, time_info: TimeSeriesInfo = None, ply=True):
+def export_npz(source_path, output_path, mdl: ModelParams, opt: OptimizationParams, pipe: PipelineParams,
+                 checkpoint, time_info: TimeSeriesInfo = None, ply=True):
     with torch.no_grad():
         dataset: DatasetInfo = readScalarFlowInfo(source_path, pipe.calib_folder)
         dataloader = DataLoader(mdl.data_device, dataset, shuffle=False, is_nerf_synthetic=False)

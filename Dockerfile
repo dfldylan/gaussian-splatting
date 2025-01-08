@@ -22,7 +22,8 @@ RUN conda install -n gaussfluids -c pytorch -c conda-forge -c defaults \
     torchaudio=0.12.1 \
     torchvision=0.13.1 \
     tensorboard=2.8 \
-    tqdm
+    tqdm \
+    embree3
 RUN conda run -n gaussfluids pip install nbconvert==7.4.0 jupyterlab open3d==0.16.0 matplotlib argparse_dataclass
 RUN apt-get clean && rm -rf /var/lib/apt/lists/*
 

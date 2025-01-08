@@ -1,30 +1,20 @@
-#
-# Copyright (C) 2023, Inria
-# GRAPHDECO research group, https://team.inria.fr/graphdeco
-# All rights reserved.
-#
-# This software is free for non-commercial, research and evaluation use
-# under the terms of the LICENSE.md file.
-#
-# For inquiries contact  george.drettakis@inria.fr
-#
-
 import os
-import torch
 from random import choice
 
-from utils.loss_utils import l1_loss, ssim, density_loss, aniso_loss, vol_loss, opacity_loss, feature_loss
-from renderer import render, network_gui
-from dataset import DataLoader
-from model import Gaussfluids, Gaussians
-from trans_model import TransModel
-from dataset.cameras import ShootModel
-from utils.general_utils import safe_state
+import torch
 from tqdm import tqdm
+
 from arguments.__init__ import ModelParams, PipelineParams, OptimizationParams
-from renderer.network_tools import handle_network
-from utils.system_utils import dump_cfg
+from dataset import DataLoader
+from dataset.cameras import ShootModel
 from dataset.readers import readNeurofluidInfo
+from model import Gaussfluids, Gaussians
+from renderer import render, network_gui
+from renderer.network_tools import handle_network
+from utils.general_utils import safe_state
+from utils.loss_utils import l1_loss, ssim, density_loss, aniso_loss, vol_loss, opacity_loss, feature_loss
+from utils.system_utils import dump_cfg
+from utils.time_utils import TimeSeriesInfo
 
 
 @dataclass
@@ -64,7 +54,7 @@ def training(mdl: ModelParams, opt: OptimizationParams, pipe, checkpoint):
     progress_bar = tqdm(range(0, opt.iterations), desc="Training progress", initial=first_iter)
     first_iter += 1
     for iteration in range(first_iter, opt.iterations + 1):
-        handle_network(pipe, None, gaussians, scene.time_info, background,
+        handle_network(pipe, gaussians, scene.time_info, background,
                        (iteration == int(opt.iterations)), source_path, opt.start_frame, opt.end_frame, opt.min_opacity)
         iter_start.record()
 
@@ -211,40 +201,36 @@ def render_set(pp: PipelineParams, frame_index, shoot: ShootModel, background, r
         torchvision.utils.save_image(gt, os.path.join(gts_path, '{0:04d}'.format(frame_index) + ".png"))
 
 
-def dump_sets(mdl: ModelParams, opt: OptimizationParams, pipe, checkpoint, time_info: TimeSeriesInfo = None):
+def export_npz(source_path, output_path, mdl: ModelParams, opt: OptimizationParams, pipe: PipelineParams, checkpoint,
+               time_info: TimeSeriesInfo = None, ply=True):
     with torch.no_grad():
         dataset = readNeurofluidInfo(source_path, eval=False, timestep_scaling=pipe.time_scaling)
-        dataloader = DataLoader(mdl, dataset)
+        dataloader = DataLoader(mdl.data_device, dataset, shuffle=False, is_nerf_synthetic=True)
         if opt.end_frame == -1:
             opt.end_frame = dataloader.time_info.num_frames - 1
-        gaussians = Gaussfluids(mdl.sh_degree, base_time=dataloader.time_info.get_time(opt.end_frame),
-                                hidden_sizes=mdl.hidden_sizes, track_channel=mdl.track_channel)
-        if checkpoint:
-            (model_params, first_iter) = torch.load(checkpoint)
-            opt_dict = gaussians.restore(model_params)
+        gaussfluids = Gaussfluids(mdl.sh_degree, base_time=dataloader.time_info.get_time(opt.end_frame),
+                                  hidden_sizes=mdl.hidden_sizes, track_channel=mdl.track_channel)
+        (model_params, first_iter) = torch.load(checkpoint)
+        opt_dict = gaussfluids.restore(model_params)
 
-        else:
-            raise Exception("No chkpnt specify")
-
-        if time_info is None:
-            time_info = dataloader.time_info
+        time_info = dataloader.time_info if time_info is None else time_info
 
         bg_color = [1, 1, 1] if mdl.white_background else [0, 0, 0]
         background = torch.tensor(bg_color, dtype=torch.float32, device="cuda")
 
-        save_path = os.path.join(model_path, 'npz')
+        save_path = os.path.join(output_path, 'npz')
         os.makedirs(save_path, exist_ok=True)
 
         json.dump(time_info._asdict(), open(os.path.join(save_path, 'time_info.json'), 'w'))
 
         for i in range(opt.start_frame, opt.end_frame + 1):
-            handle_network(pipe, None, gaussians, time_info, background, (i == opt.end_frame),
+            handle_network(pipe, gaussfluids, time_info, background, (i == opt.end_frame),
                            source_path, opt.start_frame, opt.end_frame, opt.min_opacity)
             time = time_info.start_time + i * time_info.time_step
-            print('Frame {}, Time {}'.format(i, time))
-            gaussian_frame = gaussians.get_static(time)
-            gaussian_frame.save_ply(os.path.join(save_path, 'ply', '{:04}.ply'.format(i)))
-            np.savez(os.path.join(save_path, '{:04}.npz'.format(i)), pos=gaussian_frame.get_xyz.cpu().detach().numpy())
+            logging.info('Frame {}, Time {}'.format(i, time))
+            gaussians = gaussfluids.get_static(time)
+            gaussians.save_ply(os.path.join(save_path, 'ply', '{:04}.ply'.format(i))) if ply else None
+            np.savez(os.path.join(save_path, '{:04}.npz'.format(i)), pos=gaussians.get_xyz.cpu().detach().numpy())
 
 
 def filter_gaussian(gaussian_frame: GaussfluidsModel):

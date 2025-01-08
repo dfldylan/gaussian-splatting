@@ -39,12 +39,7 @@ class Gaussfluids(GaussfluidsModel):
 
     def create_from_pcd(self, pcd: BasicPointCloud, init_color=None):
         super().create_from_pcd(pcd, init_color)
-
-        self.max_radii2D = torch.zeros((self.get_num), device="cuda")
-        self.xyz_gradient_accum = torch.zeros((self.get_num, 1), device="cuda")
-        self.denom = torch.zeros((self.get_num, 1), device="cuda")
-        self.T_sum = torch.zeros((self.get_num, 1), device="cuda")
-        self.T_count = torch.zeros((self.get_num, 1), device="cuda")
+        self.reset_grad()
 
     def setup(self, training_args, spatial_lr_scale: float, position_lr_max_steps: int, opt_dict=None):
         self._percent_dense = training_args.percent_dense
@@ -257,11 +252,7 @@ class Gaussfluids(GaussfluidsModel):
         self.features_rest = optimizable_tensors["f_rest"]
         self.feats = optimizable_tensors["track_feats"]
 
-        self.max_radii2D = torch.zeros((self.get_xyz.shape[0]), device="cuda")
-        self.xyz_gradient_accum = torch.zeros((self.get_xyz.shape[0], 1), device="cuda")
-        self.denom = torch.zeros((self.get_xyz.shape[0], 1), device="cuda")
-        self.T_sum = torch.zeros((self.get_xyz.shape[0], 1), device="cuda")
-        self.T_count = torch.zeros((self.get_xyz.shape[0], 1), device="cuda")
+        self.reset_grad()
 
     def densify_and_clone(self, grads, grad_threshold, scene_extent):
         # Extract points that satisfy the gradient condition
@@ -282,7 +273,7 @@ class Gaussfluids(GaussfluidsModel):
                                    new_opacities, new_features_dc, new_features_rest, new_feats)
 
     def densify_and_split(self, grads, grad_threshold, scene_extent, N=2):
-        n_init_points = self.get_xyz.shape[0]
+        n_init_points = self.get_num
         # Extract points that satisfy the gradient condition
         padded_grad = torch.zeros((n_init_points), device="cuda")
         padded_grad[:grads.shape[0]] = grads.squeeze()
@@ -305,6 +296,18 @@ class Gaussfluids(GaussfluidsModel):
         prune_filter = torch.cat(
             (selected_pts_mask, torch.zeros(N * selected_pts_mask.sum(), device="cuda", dtype=bool)))
         self.prune_points(prune_filter)
+
+    def reset_grad(self):
+        self.max_radii2D = torch.zeros((self.get_num), device="cuda")
+        self.xyz_gradient_accum = torch.zeros((self.get_num, 1), device="cuda")
+        self.denom = torch.zeros((self.get_num, 1), device="cuda")
+        self.T_sum = torch.zeros((self.get_num, 1), device="cuda")
+        self.T_count = torch.zeros((self.get_num, 1), device="cuda")
+
+    def prune_seg_bg(self):
+        prune_mask = (self.xyz_gradient_accum == 0).squeeze()
+        self.prune_points(prune_mask)
+        self.reset_grad()
 
     def densify_and_prune(self, max_grad, min_opacity, extent,
                           max_screen_size=None, prune_min_iters=10, prune_min_T=None):
@@ -348,7 +351,8 @@ class Gaussfluids(GaussfluidsModel):
 
     def reset_opacity(self, value=0.01):
         value = np.clip(value, a_max=0.999, a_min=0.001)
-        opacities_new = self._inverse_opacity_activation(torch.min(self.get_opacity, torch.ones_like(self.get_opacity) * value))
+        opacities_new = self._inverse_opacity_activation(
+            torch.min(self.get_opacity, torch.ones_like(self.get_opacity) * value))
         optimizable_tensors = self.replace_tensor_to_optimizer(opacities_new, "opacity")
         self.opacity = optimizable_tensors["opacity"]
 

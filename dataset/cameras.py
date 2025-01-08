@@ -29,7 +29,6 @@ class ShootModel(nn.Module):
         self.FoVy = self.shoot_info.FovY
         self.time = self.shoot_info.time
 
-        self.depth_path = self.shoot_info.depth_path
         self.is_nerf_synthetic = is_nerf_synthetic
         self.invdepthmap = None
         self.depth_reliable = False
@@ -47,28 +46,30 @@ class ShootModel(nn.Module):
         self._image_width = None
         self._image_height = None
 
-    def _check_image(self):
+    def _load_image(self):
         if self._image is None:
             origin_image = Image.open(self.shoot_info.image_path)
             orig_w, orig_h = origin_image.size
 
-            if self.depth_path != "":
+            # depth
+            if self.shoot_info.depth_path != "":
+                depth_path = self.shoot_info.depth_path
                 try:
                     if self.is_nerf_synthetic:
-                        invdepthmap = cv2.imread(self.depth_path, -1).astype(np.float32) / 512
+                        invdepthmap = cv2.imread(depth_path, -1).astype(np.float32) / 512
                     else:
-                        invdepthmap = cv2.imread(self.depth_path, -1).astype(np.float32) / float(2 ** 16)
+                        invdepthmap = cv2.imread(depth_path, -1).astype(np.float32) / float(2 ** 16)
 
                 except FileNotFoundError:
-                    print(f"Error: The depth file at path '{self.depth_path}' was not found.")
+                    print(f"Error: The depth file at path '{depth_path}' was not found.")
                     raise
                 except IOError:
                     print(
-                        f"Error: Unable to open the image file '{self.depth_path}'. It may be corrupted or an unsupported format.")
+                        f"Error: Unable to open the image file '{depth_path}'. It may be corrupted or an unsupported format.")
                     raise
                 except Exception as e:
                     print(
-                        f"An unexpected error occurred when trying to read depth at {self.depth_path}: {e}")
+                        f"An unexpected error occurred when trying to read depth at {depth_path}: {e}")
                     raise
             else:
                 invdepthmap = None
@@ -98,6 +99,23 @@ class ShootModel(nn.Module):
                 gt_image = resized_image[:1, ...]
             else:
                 raise ValueError(f"Unexpected image shape: {resized_image.shape}")
+
+            # seg
+            if self.shoot_info.seg_path != "":
+                seg_path = self.shoot_info.seg_path
+                # 读取二值图像
+                binary_mask = cv2.imread(seg_path, cv2.IMREAD_GRAYSCALE)
+
+                # 确认图像是否成功加载
+                if binary_mask is None:
+                    raise ValueError("Failed to load the binary mask image.")
+
+                # # 确认图像是否只有两种像素值（0和255）
+                # unique_values = np.unique(binary_mask)
+                # print("Unique pixel values in the image:", unique_values)
+
+                # 如果需要将其转换为布尔掩码 (True/False)
+                self.seg_mask = torch.from_numpy(cv2.resize(binary_mask, resolution) > 0).cuda()
 
             self._image = gt_image.clamp(0.0, 1.0)
             self._image_width = self._image.shape[2]
@@ -130,17 +148,17 @@ class ShootModel(nn.Module):
 
     @property
     def image(self):
-        self._check_image()
+        self._load_image()
         return self._image
 
     @property
     def image_width(self):
-        self._check_image()
+        self._load_image()
         return self._image_width
 
     @property
     def image_height(self):
-        self._check_image()
+        self._load_image()
         return self._image_height
 
 

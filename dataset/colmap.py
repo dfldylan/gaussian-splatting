@@ -8,14 +8,14 @@
 #
 # For inquiries contact  george.drettakis@inria.fr
 #
+import collections
 import os
+import struct
 import sys
 from itertools import repeat
 from multiprocessing import Pool
 
 import numpy as np
-import collections
-import struct
 
 from dataset import ShootInfo
 from utils.graphics_utils import focal2fov
@@ -73,11 +73,6 @@ def rotmat2qvec(R):
     if qvec[0] < 0:
         qvec *= -1
     return qvec
-
-
-class Image(BaseImage):
-    def qvec2rotmat(self):
-        return qvec2rotmat(self.qvec)
 
 
 def read_next_bytes(fid, num_bytes, format_char_sequence, endian_character="<"):
@@ -218,10 +213,10 @@ def read_extrinsics_binary(path_to_model_file):
             xys = np.column_stack([tuple(map(float, x_y_id_s[0::3])),
                                    tuple(map(float, x_y_id_s[1::3]))])
             point3D_ids = np.array(tuple(map(int, x_y_id_s[2::3])))
-            images[image_id] = Image(
+            images[image_id] = TimedImage(
                 id=image_id, qvec=qvec, tvec=tvec,
                 camera_id=camera_id, name=image_name,
-                xys=xys, point3D_ids=point3D_ids)
+                xys=xys, point3D_ids=point3D_ids, frame_id=int(os.path.splitext(image_name)[0]))
     return images
 
 
@@ -276,10 +271,10 @@ def read_extrinsics_text(path):
                 xys = np.column_stack([tuple(map(float, elems[0::3])),
                                        tuple(map(float, elems[1::3]))])
                 point3D_ids = np.array(tuple(map(int, elems[2::3])))
-                images[image_id] = Image(
+                images[image_id] = TimedImage(
                     id=image_id, qvec=qvec, tvec=tvec,
                     camera_id=camera_id, name=image_name,
-                    xys=xys, point3D_ids=point3D_ids)
+                    xys=xys, point3D_ids=point3D_ids, frame_id=int(os.path.splitext(image_name)[0]))
     return images
 
 
@@ -335,18 +330,20 @@ def _process_colmap_camera(key, cam_extrinsics, cam_intrinsics, depths_params, i
     else:
         assert False, "Colmap camera model not handled: only undistorted datasets (PINHOLE or SIMPLE_PINHOLE cameras) supported!"
 
-    n_remove = len(extr.name.split('.')[-1]) + 1
+    # 获取文件名和扩展名的分离
+    file_name_no_ext, _ = os.path.splitext(extr.name)
+
     depth_params = None
     if depths_params is not None:
         try:
-            depth_params = depths_params[extr.name[:-n_remove]]
+            depth_params = depths_params[file_name_no_ext]
         except:
             print("\n", key, "not found in depths_params")
 
     image_path = os.path.join(images_folder, extr.name)
     image_name = extr.name
-    depth_path = os.path.join(depths_folder, f"{extr.name[:-n_remove]}.png") if depths_folder != "" else ""
-    seg_path = os.path.join(seg_folder, f"{extr.name}.png") if seg_folder != "" else ""
+    depth_path = os.path.join(depths_folder, f"{file_name_no_ext}.png") if depths_folder != "" else ""
+    seg_path = os.path.join(seg_folder, f"{file_name_no_ext}.png") if seg_folder != "" else ""
 
     if time_step:
         cam_info = ShootInfo(uid=uid, R=R, T=T, FovY=FovY, FovX=FovX, depth_params=depth_params, image_path=image_path,

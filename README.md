@@ -386,8 +386,6 @@ the exact resolution and don't mind image distortion.
 Display). In a multi-GPU system (e.g., laptop) your OpenGL/Display GPU should be the same as your CUDA GPU (e.g., by
 setting the application's GPU preference on Windows, see below) for maximum performance.**
 
-![Teaser image](assets/select.png)
-
 In addition to the initial point cloud and the splats, you also have the option to visualize the Gaussians by rendering
 them as ellipsoids from the floating menu.
 SIBR has many other functionalities, please see the [documentation](https://sibr.gitlabpages.inria.fr/) for more details

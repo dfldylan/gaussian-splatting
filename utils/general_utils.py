@@ -9,11 +9,15 @@
 # For inquiries contact  george.drettakis@inria.fr
 #
 
-import torch
+import logging
+import random
 import sys
 from datetime import datetime
+
 import numpy as np
-import random
+import torch
+
+from utils.system_utils import is_debug_mode
 
 
 def PILtoTorch(pil_image, resolution):
@@ -27,8 +31,9 @@ def PILtoTorch(pil_image, resolution):
     else:
         return resized_image.unsqueeze(dim=-1).permute(2, 0, 1)
 
+
 def get_expon_lr_func(
-    lr_init, lr_final, lr_delay_steps=0, lr_delay_mult=1.0, max_steps=1000000
+        lr_init, lr_final, lr_delay_steps=0, lr_delay_mult=1.0, max_steps=1000000
 ):
     """
     Copied from Plenoxels
@@ -65,6 +70,7 @@ def get_expon_lr_func(
 
 def safe_state(silent):
     old_f = sys.stdout
+
     class F:
         def __init__(self, silent):
             self.silent = silent
@@ -86,3 +92,7 @@ def safe_state(silent):
     torch.manual_seed(0)
     torch.cuda.set_device(torch.device("cuda:0"))
 
+
+def logging_setup():
+    logging.basicConfig(level=logging.DEBUG) if is_debug_mode() else logging.basicConfig(level=logging.INFO)
+    logging.getLogger("PIL").setLevel(logging.INFO)

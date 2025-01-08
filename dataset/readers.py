@@ -144,8 +144,8 @@ def readColmapSceneInfo(path, depths, seg, images=None, time_step=1 / 30, timest
                                                    cam_intrinsics=cam_intrinsics,
                                                    depths_params=depths_params,
                                                    images_folder=os.path.join(path, reading_dir),
-                                                   depths_folder=os.path.join(path, depths) if depths != "" else "",
-                                                   seg_folder=os.path.join(path, seg) if seg != "" else "",
+                                                   depths_folder=depths,
+                                                   seg_folder=seg,
                                                    time_step=time_step,
                                                    )
 
