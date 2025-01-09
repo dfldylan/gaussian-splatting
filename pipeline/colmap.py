@@ -17,6 +17,7 @@ from dataset import DataLoader, DatasetInfo
 from dataset.cameras import ShootModel
 from dataset.readers import readColmapSceneInfo
 from model.gaussfluids import Gaussfluids
+from model.gaussians import Gaussians
 from render import handle_factor
 from renderer import render
 from renderer.network_tools import handle_network
@@ -32,6 +33,7 @@ from utils.time_utils import TimeSeriesInfo
 class PipelineParams(arguments.PipelineParams):
     depths: str = ""
     seg: str = ""
+    initial: str = "0.pth"
 
 
 @dataclass
@@ -39,16 +41,65 @@ class OptimizationParams(arguments.OptimizationParams):
     initial_iterations: int = 100
 
 
+def initial(initial_path, iterations, dataloader: DataLoader, opt: OptimizationParams,
+            pipe: PipelineParams) -> Gaussians:
+    gaussians = Gaussians(max_sh_degree=1)
+    gaussians.create_from_pcd(dataloader.point_cloud)
+    gaussians.setup(opt, dataloader.cameras_extent, position_lr_max_steps=opt.iterations)
+    bg = torch.tensor([1, 1, 1], dtype=torch.float32, device="cuda")
+    for iteration in range(iterations):
+        shoot_stack = dataloader.getTrainCameras()
+        shoot: ShootModel = choice(shoot_stack)
+
+        render_pkg = render(shoot, gaussians, pipe, bg)
+        image, viewspace_point_tensor = render_pkg["render"], render_pkg["viewspace_points"]
+        visibility_filter, radii = render_pkg["visibility_filter"], render_pkg["radii"]
+        T_sum, T_count = render_pkg["T_sum"], render_pkg["T_count"]
+
+        gt_image = shoot.image.cuda()
+        loss = l1_loss(image, gt_image, mask=shoot.seg_mask)
+
+        loss.backward()
+
+        with torch.no_grad():
+            viewspace_point_tensor_grad = viewspace_point_tensor.grad
+            if visibility_filter.sum().cpu().numpy() != 0:
+                gaussians.max_radii2D[visibility_filter] = torch.max(gaussians.max_radii2D[visibility_filter],
+                                                                     radii[visibility_filter])
+                gaussians.add_densification_stats(viewspace_point_tensor_grad, visibility_filter, T_sum.unsqueeze(-1),
+                                                  T_count.unsqueeze(-1))
+            gaussians.optimizer.zero_grad(set_to_none=True)
+    gaussians.prune_seg_bg()
+    logging.info("\nSaving Initial Checkpoint")
+    torch.save(gaussians.save(), initial_path)
+    return gaussians
+
+
 def training(source_path, model_path, mdl: ModelParams, opt: OptimizationParams, pipe: PipelineParams, checkpoint=None):
     first_iter = 0
     dump_cfg(mdl, model_path)
 
-    dataset, dataloader, gaussfluids = build_dataloader(source_path, mdl, opt, pipe, shuffle=True)
+    dataset: DatasetInfo = readColmapSceneInfo(source_path, pipe.depths, pipe.seg)
+    dataloader = DataLoader(mdl.data_device, dataset, shuffle=True, is_nerf_synthetic=False)
+    if opt.end_frame == -1:
+        opt.end_frame = dataloader.time_info.num_frames - 1
+
+    if not os.path.exists(os.path.join(model_path, pipe.initial)):
+        logging.info("No found initial pth, start initial pipe")
+        gs_initial: Gaussians = initial(os.path.join(model_path, pipe.initial), opt.initial_iterations, dataloader, opt,
+                                        pipe)
+    else:
+        pass
+
+    gaussfluids = Gaussfluids(mdl.sh_degree, base_time=dataloader.time_info.get_time(opt.end_frame),
+                              hidden_sizes=mdl.hidden_sizes, track_channel=mdl.track_channel,
+                              shared_feature=True, shared_opacity=True)
 
     if checkpoint:
-        (model_params, first_iter, bg_params, opt_dict) = torch.load(checkpoint)
-        gaussfluids.restore(model_params)
-        gaussfluids.setup(opt, dataloader.cameras_extent, position_lr_max_steps=opt.iterations, opt_dict=opt_dict)
+        pass
+        # (model_params, first_iter, bg_params, opt_dict) = torch.load(checkpoint)
+        # gaussfluids.restore(model_params)
+        # gaussfluids.setup(opt, dataloader.cameras_extent, position_lr_max_steps=opt.iterations, opt_dict=opt_dict)
     else:
         gaussfluids.create_from_pcd(dataloader.point_cloud, init_color=pipe.dynamics_color)
         gaussfluids.setup(opt, dataloader.cameras_extent, position_lr_max_steps=opt.iterations)

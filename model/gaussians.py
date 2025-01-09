@@ -28,13 +28,17 @@ class Gaussians:
     active_sh_degree: int
     max_sh_degree: int
     channel: int
+    is_shared_feature: bool
+    is_shared_opacity: bool
     opacity_activation_type: ActivationType
     scaling_activation_type: ActivationType
 
     def __init__(self,
-                 xyz, scaling, rotation, opacity, features_dc, features_rest,
-                 active_sh_degree, max_sh_degree=3, channel=3,
-                 opacity_activation_type=ActivationType.SIGMOID, scaling_activation_type=ActivationType.EXP
+                 xyz=torch.empty(0), scaling=torch.empty(0), rotation=torch.empty(0),
+                 opacity=torch.empty(0), features_dc=torch.empty(0), features_rest=torch.empty(0),
+                 active_sh_degree=0, max_sh_degree=3, channel=3,
+                 opacity_activation_type=ActivationType.SIGMOID, scaling_activation_type=ActivationType.EXP,
+                 shared_feature=False, shared_opacity=False,
                  ):
         self.channel = channel
 
@@ -47,6 +51,9 @@ class Gaussians:
 
         self.active_sh_degree = active_sh_degree
         self.max_sh_degree = max_sh_degree
+
+        self.is_shared_feature = shared_feature
+        self.is_shared_opacity = shared_opacity
 
         self.opacity_activation_type = opacity_activation_type
         self.scaling_activation_type = scaling_activation_type
@@ -350,6 +357,11 @@ class Gaussians:
 
         torch.cuda.empty_cache()
 
+    def prune_seg_bg(self):
+        prune_mask = (self.xyz_gradient_accum == 0).squeeze()
+        self.prune_points(prune_mask)
+        self.reset_gradient_accum()
+
     @property
     def get_num(self):
         return self.xyz.shape[0]
@@ -371,18 +383,26 @@ class Gaussians:
 
     @property
     def get_opacity(self):
-        return self._opacity_activation(self.opacity)
+        out = self._opacity_activation(self.opacity)
+        if self.is_shared_opacity:
+            assert out.size(0) == 1
+            out = out.expand(self.get_num, -1)
+        return out
 
     @property
     def get_features(self):
         features_dc = self.features_dc
         features_rest = self.features_rest
         if self.channel == 3:
-            return torch.cat((features_dc, features_rest), dim=1)
+            out = torch.cat((features_dc, features_rest), dim=1)
         elif self.channel == 1:
-            return torch.cat((features_dc, features_rest), dim=1).repeat(1, 1, 3)
+            out = torch.cat((features_dc, features_rest), dim=1).repeat(1, 1, 3)
         else:
             raise ValueError('channel must be 1 or 3')
+        if self.is_shared_feature:
+            assert out.size() == 1
+            out = out.expand(self.get_num, -1, -1)
+        return out
 
     @property
     def is_available(self):

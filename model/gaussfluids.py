@@ -16,12 +16,14 @@ class Gaussfluids(Gaussians):
     mlp: torch.nn.Module
 
     def __init__(self, sh_degree=3, channel=3, base_time=0, track_channel=64, hidden_sizes=[256, 256, 256, 256],
-                 opacity_activation_type=ActivationType.SIGMOID, scaling_activation_type=ActivationType.EXP):
+                 opacity_activation_type=ActivationType.SIGMOID, scaling_activation_type=ActivationType.EXP,
+                 shared_feature=False, shared_opacity=False, ):
         super().__init__(xyz=torch.empty(0), scaling=torch.empty(0), rotation=torch.empty(0),
                          opacity=torch.empty(0), features_dc=torch.empty(0), features_rest=torch.empty(0),
                          active_sh_degree=0, max_sh_degree=sh_degree, channel=channel,
                          opacity_activation_type=opacity_activation_type,
-                         scaling_activation_type=scaling_activation_type)
+                         scaling_activation_type=scaling_activation_type,
+                         shared_feature=shared_feature, shared_opacity=shared_opacity)
         self.feats = torch.empty(0)
         self.track_channel = track_channel
         self.base_time = base_time
@@ -86,11 +88,6 @@ class Gaussfluids(Gaussians):
         d["track_feats"] = new_feats
         return selected_pts_mask, d
 
-    def prune_seg_bg(self):
-        prune_mask = (self.xyz_gradient_accum == 0).squeeze()
-        self.prune_points(prune_mask)
-        self.reset_gradient_accum()
-
     def get_static(self, time) -> Gaussians:
         dt_time = time - self.base_time
         output = self.mlp(
@@ -100,19 +97,22 @@ class Gaussfluids(Gaussians):
         return Gaussians(self.xyz + dt_xyz, self.scaling, self.rotation,
                          self.opacity, self.features_dc, self.features_rest,
                          self.active_sh_degree, self.max_sh_degree, self.channel,
-                         self.opacity_activation_type, self.scaling_activation_type)
+                         self.opacity_activation_type, self.scaling_activation_type,
+                         self.is_shared_feature, self.is_shared_opacity)
 
     def move_0(self) -> Gaussians:
         return Gaussians(self.xyz, self.scaling, self.rotation,
                          self.opacity, self.features_dc, self.features_rest,
                          self.active_sh_degree, self.max_sh_degree, self.channel,
-                         self.opacity_activation_type, self.scaling_activation_type)
+                         self.opacity_activation_type, self.scaling_activation_type,
+                         self.is_shared_feature, self.is_shared_opacity)
 
     def move(self, dt_xyz, dt_scaling, dt_rotation) -> Gaussians:
         return Gaussians(self.xyz + dt_xyz, self.scaling, self.rotation,
                          self.opacity, self.features_dc, self.features_rest,
                          self.active_sh_degree, self.max_sh_degree, self.channel,
-                         self.opacity_activation_type, self.scaling_activation_type)
+                         self.opacity_activation_type, self.scaling_activation_type,
+                         self.is_shared_feature, self.is_shared_opacity)
 
     def build_split_mask_data(self, selected_pts_mask, N=2):
         d, add_num = super().build_split_mask_data(selected_pts_mask, N)
