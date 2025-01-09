@@ -9,12 +9,11 @@
 # For inquiries contact  george.drettakis@inria.fr
 #
 
-import torch
 import math
+import torch
 from diff_gaussian_rasterization import GaussianRasterizationSettings, GaussianRasterizer
 
 from dataset import ShootModel
-from model.gaussfluids import GaussfluidsModel
 from model.gaussians import Gaussians
 from utils.sh_utils import eval_sh
 

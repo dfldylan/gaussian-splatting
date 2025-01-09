@@ -9,27 +9,17 @@
 # For inquiries contact  george.drettakis@inria.fr
 #
 
-import os
-import sys
-from argparse import ArgumentParser
 from random import choice
 
-import torch
-import yaml
 from tqdm import tqdm
 
-from arguments.__init__ import ModelParams, PipelineParams, OptimizationParams
-from dataset import DataLoader
+from arguments.__init__ import ModelParams, OptimizationParams
 from dataset.cameras import ShootModel
-from dataset.readers import readFixedColmapInfo
-from model import Gaussfluids
-from renderer import render, network_gui
-from renderer.network_tools import handle_network
-from utils.general_utils import safe_state
+from renderer import render
 from utils.loss_utils import l1_loss, ssim, density_loss, feature_loss, \
     position_loss
 from utils.sh_utils import RGB2SH, rgb_str_to_tensor
-from utils.system_utils import merge_args, dump_cfg
+from utils.system_utils import dump_cfg
 
 
 @dataclass
@@ -288,18 +278,13 @@ import json
 
 import torch
 from dataset import DataLoader
-from model import Gaussfluids
-from trans_model import TransModel
-from model.gaussfluids import GaussfluidsModel
-import os, sys
+from model.gaussfluids import Gaussfluids
+import os
 import yaml
-from utils.general_utils import safe_state
-from argparse import ArgumentParser
-from arguments.__init__ import ModelParams, PipelineParams, OptimizationParams
+from arguments.__init__ import ModelParams, OptimizationParams
 from utils.time_utils import TimeSeriesInfo
 import numpy as np
 from renderer.network_tools import handle_network
-from renderer import network_gui
 from utils.system_utils import merge_args
 from dataset.readers import readFixedColmapInfo
 
@@ -342,11 +327,11 @@ def trans_sets(mdl: ModelParams, opt: OptimizationParams, pipe, checkpoint, flui
             np.savez(os.path.join(save_path, '{:04}.npz'.format(i)), pos=gaussian_frame.get_xyz.cpu().detach().numpy())
 
 
-def filter_gaussian(gaussian_frame: GaussfluidsModel):
-    xyz = gaussian_frame.get_xyz.cpu().numpy()
-    mask = gaussian_frame.get_opacity.cpu().numpy() < 0.1
-    xyz_filtered = xyz[mask[:, 0]]
-    return xyz_filtered
+# def filter_gaussian(gaussian_frame: GaussfluidsModel):
+#     xyz = gaussian_frame.get_xyz.cpu().numpy()
+#     mask = gaussian_frame.get_opacity.cpu().numpy() < 0.1
+#     xyz_filtered = xyz[mask[:, 0]]
+#     return xyz_filtered
 
 
 # if __name__ == "__main__":

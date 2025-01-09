@@ -8,7 +8,8 @@ from arguments.__init__ import ModelParams, PipelineParams, OptimizationParams
 from dataset import DataLoader
 from dataset.cameras import ShootModel
 from dataset.readers import readNeurofluidInfo
-from model import Gaussfluids, Gaussians
+from model.gaussians import Gaussians
+from model.gaussfluids import Gaussfluids
 from renderer import render, network_gui
 from renderer.network_tools import handle_network
 from utils.general_utils import safe_state

@@ -16,7 +16,7 @@ from arguments.__init__ import ModelParams
 from dataset import DataLoader, DatasetInfo
 from dataset.cameras import ShootModel
 from dataset.readers import readScalarFlowInfo
-from model import Gaussfluids
+from model.gaussfluids import Gaussfluids
 from render import handle_factor
 from renderer import render
 from renderer.network_tools import handle_network

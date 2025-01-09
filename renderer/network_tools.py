@@ -2,8 +2,8 @@ import copy
 import torch
 import numpy as np
 import matplotlib.pyplot as plt
-from model import Gaussfluids
-from model import Gaussians
+from model.gaussfluids import Gaussfluids
+from model.gaussians import Gaussians
 from arguments import PipelineParams
 from renderer import render, network_gui
 from arguments.__init__ import OptimizationParams

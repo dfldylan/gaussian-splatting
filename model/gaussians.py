@@ -28,18 +28,18 @@ class Gaussians:
     scaling_activation_type: ActivationType
 
     def __init__(self,
-                 _xyz, _scaling, _rotation, _opacity, _features_dc, _features_rest,
+                 xyz, scaling, rotation, opacity, features_dc, features_rest,
                  active_sh_degree, max_sh_degree=3, channel=3,
                  opacity_activation_type=ActivationType.SIGMOID, scaling_activation_type=ActivationType.EXP
                  ):
         self.channel = channel
 
-        self.xyz = _xyz
-        self.scaling = _scaling
-        self.rotation = _rotation
-        self.opacity = _opacity
-        self.features_dc = _features_dc
-        self.features_rest = _features_rest
+        self.xyz = xyz
+        self.scaling = scaling
+        self.rotation = rotation
+        self.opacity = opacity
+        self.features_dc = features_dc
+        self.features_rest = features_rest
 
         self.active_sh_degree = active_sh_degree
         self.max_sh_degree = max_sh_degree
