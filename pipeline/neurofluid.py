@@ -37,8 +37,8 @@ def training(mdl: ModelParams, opt: OptimizationParams, pipe, checkpoint):
                             hidden_sizes=mdl.hidden_sizes, track_channel=mdl.track_channel)
 
     if checkpoint:
-        (model_params, first_iter) = torch.load(checkpoint)
-        opt_dict = gaussians.restore(model_params)
+        (model_params, first_iter, opt_dict) = torch.load(checkpoint)
+        gaussians.restore(model_params)
         gaussians.setup(opt, scene.cameras_extent, position_lr_max_steps=opt.iterations - opt.dynamics_iterations,
                         opt_dict=opt_dict)
     else:
@@ -150,7 +150,7 @@ def training(mdl: ModelParams, opt: OptimizationParams, pipe, checkpoint):
 
             if iteration % 1000 == 0:
                 print("\n[ITER {}] Saving Checkpoint".format(iteration))
-                torch.save((gaussians.save(), iteration),
+                torch.save((gaussians.save(), iteration, gaussians.optimizer.state_dict()),
                            model_path + "/chkpnt" + str(iteration) + ".pth")
 
 
@@ -212,7 +212,7 @@ def export_npz(source_path, output_path, mdl: ModelParams, opt: OptimizationPara
         gaussfluids = Gaussfluids(mdl.sh_degree, base_time=dataloader.time_info.get_time(opt.end_frame),
                                   hidden_sizes=mdl.hidden_sizes, track_channel=mdl.track_channel)
         (model_params, first_iter) = torch.load(checkpoint)
-        opt_dict = gaussfluids.restore(model_params)
+        gaussfluids.restore(model_params)
 
         time_info = dataloader.time_info if time_info is None else time_info
 

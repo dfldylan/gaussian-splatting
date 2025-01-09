@@ -49,8 +49,8 @@ def training(source_path, model_path, mdl: ModelParams, opt: OptimizationParams,
                               hidden_sizes=mdl.hidden_sizes, track_channel=mdl.track_channel)
 
     if checkpoint:
-        (model_params, first_iter) = torch.load(checkpoint)
-        opt_dict = gaussfluids.restore(model_params)
+        (model_params, first_iter, opt_dict) = torch.load(checkpoint)
+        gaussfluids.restore(model_params)
         gaussfluids.setup(opt, dataloader.cameras_extent, position_lr_max_steps=opt.iterations, opt_dict=opt_dict)
     else:
         gaussfluids.create_from_pcd(dataloader.point_cloud, init_color=pipe.dynamics_color)
@@ -151,7 +151,8 @@ def training(source_path, model_path, mdl: ModelParams, opt: OptimizationParams,
 
             if iteration % 1000 == 0:
                 print("\n[ITER {}] Saving Checkpoint".format(iteration))
-                torch.save((gaussfluids.save(), iteration), model_path + "/chkpnt" + str(iteration) + ".pth")
+                torch.save((gaussfluids.save(), iteration, gaussfluids.optimizer.state_dict()),
+                           model_path + "/chkpnt" + str(iteration) + ".pth")
 
 
 def rendering(source_path, output_path, mdl: ModelParams, opt: OptimizationParams, pipe: PipelineParams, checkpoint,
@@ -163,7 +164,7 @@ def rendering(source_path, output_path, mdl: ModelParams, opt: OptimizationParam
     gaussfluids = Gaussfluids(mdl.sh_degree, channel=1, base_time=dataloader.time_info.get_time(opt.end_frame),
                               hidden_sizes=mdl.hidden_sizes, track_channel=mdl.track_channel)
     (model_params, first_iter) = torch.load(checkpoint)
-    opt_dict = gaussfluids.restore(model_params)
+    gaussfluids.restore(model_params)
 
     shoot: ShootModel = dataloader.getTrainCameras()[0]
     logging.info(f"Using {shoot.shoot_info.image_name} as cam.")
@@ -208,7 +209,7 @@ def rendering(source_path, output_path, mdl: ModelParams, opt: OptimizationParam
 
 
 def export_npz(source_path, output_path, mdl: ModelParams, opt: OptimizationParams, pipe: PipelineParams,
-                 checkpoint, time_info: TimeSeriesInfo = None, ply=True):
+               checkpoint, time_info: TimeSeriesInfo = None, ply=True):
     with torch.no_grad():
         dataset: DatasetInfo = readScalarFlowInfo(source_path, pipe.calib_folder)
         dataloader = DataLoader(mdl.data_device, dataset, shuffle=False, is_nerf_synthetic=False)
@@ -217,7 +218,7 @@ def export_npz(source_path, output_path, mdl: ModelParams, opt: OptimizationPara
         gaussfluids = Gaussfluids(mdl.sh_degree, channel=1, base_time=dataloader.time_info.get_time(opt.end_frame),
                                   hidden_sizes=mdl.hidden_sizes, track_channel=mdl.track_channel)
         (model_params, first_iter) = torch.load(checkpoint)
-        opt_dict = gaussfluids.restore(model_params)
+        gaussfluids.restore(model_params)
 
         time_info = dataloader.time_info if time_info is None else time_info
 

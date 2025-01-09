@@ -46,8 +46,8 @@ def training(source_path, model_path, mdl: ModelParams, opt: OptimizationParams,
     dataset, dataloader, gaussfluids = build_dataloader(source_path, mdl, opt, pipe, shuffle=True)
 
     if checkpoint:
-        (model_params, first_iter, bg_params) = torch.load(checkpoint)
-        opt_dict = gaussfluids.restore(model_params)
+        (model_params, first_iter, bg_params, opt_dict) = torch.load(checkpoint)
+        gaussfluids.restore(model_params)
         gaussfluids.setup(opt, dataloader.cameras_extent, position_lr_max_steps=opt.iterations, opt_dict=opt_dict)
     else:
         gaussfluids.create_from_pcd(dataloader.point_cloud, init_color=pipe.dynamics_color)
@@ -188,14 +188,15 @@ def training(source_path, model_path, mdl: ModelParams, opt: OptimizationParams,
             # --------  Saving
             if iteration == opt.initial_iterations or iteration % 1000 == 0:
                 print("\n[ITER {}] Saving Checkpoint".format(iteration))
-                torch.save((gaussfluids.save(), iteration, None), model_path + "/chkpnt" + str(iteration) + ".pth")
+                torch.save((gaussfluids.save(), iteration, None, gaussfluids.optimizer.state_dict()),
+                           model_path + "/chkpnt" + str(iteration) + ".pth")
 
 
 def rendering(source_path, output_path, mdl: ModelParams, opt: OptimizationParams, pipe: PipelineParams, checkpoint,
               scaling_factor=None, opacity_factor=None, bg_color=None, gs_color=None):
     dataset, dataloader, gaussfluids = build_dataloader(source_path, mdl, opt, pipe, shuffle=False)
     (model_params, first_iter) = torch.load(checkpoint)
-    opt_dict = gaussfluids.restore(model_params)
+    gaussfluids.restore(model_params)
 
     shoot: ShootModel = dataloader.getTrainCameras()[0]
     logging.info(f"Using {shoot.shoot_info.image_name} as cam.")
@@ -244,7 +245,7 @@ def export_npz(source_path, output_path, mdl: ModelParams, opt: OptimizationPara
     with torch.no_grad():
         dataset, dataloader, gaussfluids = build_dataloader(source_path, mdl, opt, pipe, shuffle=False)
         (model_params, first_iter, _) = torch.load(checkpoint)
-        opt_dict = gaussfluids.restore(model_params)
+        gaussfluids.restore(model_params)
 
         time_info = dataloader.time_info if time_info is None else time_info
 
@@ -271,14 +272,14 @@ def network_viewer(source_path, mdl: ModelParams, opt: OptimizationParams, pipe:
     with torch.no_grad():
         dataset, dataloader, gaussfluids = build_dataloader(source_path, mdl, opt, pipe, shuffle=False)
         (model_params, first_iter, _) = torch.load(checkpoint)
-        opt_dict = gaussfluids.restore(model_params)
+        gaussfluids.restore(model_params)
 
-        time_info: TimeSeriesInfo = dataloader.time_info
-        bg_color = [1, 1, 1] if mdl.white_background else [0, 0, 0]
-        background = torch.tensor(bg_color, dtype=torch.float32, device="cuda")
+    time_info: TimeSeriesInfo = dataloader.time_info
+    bg_color = [1, 1, 1] if mdl.white_background else [0, 0, 0]
+    background = torch.tensor(bg_color, dtype=torch.float32, device="cuda")
 
-        handle_network(pipe, gaussfluids, time_info, background, False, source_path, opt.start_frame,
-                       opt.end_frame, opt.min_opacity, gaussians_bg)
+    handle_network(pipe, gaussfluids, time_info, background, False, source_path, opt.start_frame,
+                   opt.end_frame, opt.min_opacity, gaussians_bg)
 
 
 def build_dataloader(source_path, mdl: ModelParams, opt: OptimizationParams, pipe: PipelineParams, shuffle=True):

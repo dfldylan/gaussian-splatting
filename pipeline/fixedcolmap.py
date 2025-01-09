@@ -35,7 +35,7 @@ def training(mdl: ModelParams, opt: OptimizationParams, pipe, checkpoint, fluid_
     first_iter = 0
     dump_cfg(mdl, model_path)
     scene_info = readFixedColmapInfo(source_path, eval=False)
-    scene = DataLoader(mdl, scene_info,is_nerf_synthetic=False)
+    scene = DataLoader(mdl, scene_info, is_nerf_synthetic=False)
     if opt.end_frame == -1:
         opt.end_frame = scene.time_info.num_frames - 1
 
@@ -45,8 +45,8 @@ def training(mdl: ModelParams, opt: OptimizationParams, pipe, checkpoint, fluid_
 
     if checkpoint:
         (bg_params, first_iter, model_params) = torch.load(checkpoint)
-        opt_dict = gs_bg.restore(bg_params, position_lr_max_steps=opt.bg_iterations)
-        opt_dict = gaussians.restore(model_params)
+        gs_bg.restore(bg_params, position_lr_max_steps=opt.bg_iterations)
+        gaussians.restore(model_params)
     else:
         gs_bg.create_from_pcd(scene.point_cloud)
         gs_bg.setup(opt, scene.cameras_extent, position_lr_max_steps=opt.bg_iterations)
@@ -64,7 +64,8 @@ def training(mdl: ModelParams, opt: OptimizationParams, pipe, checkpoint, fluid_
     first_iter += 1
     for iteration in range(first_iter, opt.iterations + 1):
         handle_network(pipe, gaussians, scene.time_info, background,
-                       (iteration == int(opt.iterations)), source_path, opt.start_frame, opt.end_frame, opt.min_opacity, gs_bg)
+                       (iteration == int(opt.iterations)), source_path, opt.start_frame, opt.end_frame, opt.min_opacity,
+                       gs_bg)
         iter_start.record()
 
         bg = torch.rand((3), device="cuda") if pipe.random_background else background
@@ -296,13 +297,14 @@ def trans_sets(mdl: ModelParams, opt: OptimizationParams, pipe, checkpoint, flui
 
     with torch.no_grad():
         scene_info = readFixedColmapInfo(source_path, eval=False)
-        scene = DataLoader(mdl, scene_info,is_nerf_synthetic=False)
+        scene = DataLoader(mdl, scene_info, is_nerf_synthetic=False)
         if opt.end_frame == -1:
             opt.end_frame = scene.time_info.num_frames - 1
-        gaussians = Gaussfluids(mdl.sh_degree, base_time=scene.time_info.get_time(opt.end_frame), hidden_sizes=mdl.hidden_sizes, track_channel=mdl.track_channel)
+        gaussians = Gaussfluids(mdl.sh_degree, base_time=scene.time_info.get_time(opt.end_frame),
+                                hidden_sizes=mdl.hidden_sizes, track_channel=mdl.track_channel)
         if checkpoint:
             (_, first_iter, model_params) = torch.load(checkpoint)
-            opt_dict = gaussians.restore(model_params)
+            gaussians.restore(model_params)
         else:
             raise Exception("No chkpnt specify")
 
@@ -325,7 +327,6 @@ def trans_sets(mdl: ModelParams, opt: OptimizationParams, pipe, checkpoint, flui
             gaussian_frame = gaussians.get_static(time)
             gaussian_frame.save_ply(os.path.join(save_path, 'ply', '{:04}.ply'.format(i)))
             np.savez(os.path.join(save_path, '{:04}.npz'.format(i)), pos=gaussian_frame.get_xyz.cpu().detach().numpy())
-
 
 # def filter_gaussian(gaussian_frame: GaussfluidsModel):
 #     xyz = gaussian_frame.get_xyz.cpu().numpy()
