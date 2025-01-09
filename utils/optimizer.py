@@ -3,6 +3,7 @@ import logging
 import torch
 from torch import nn
 
+# todo whether size(0) is 1
 
 def prune_optimizer(optimizer, mask):
     prume_num = (~mask).sum()
