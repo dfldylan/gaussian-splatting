@@ -7,7 +7,6 @@ from plyfile import PlyData, PlyElement
 from simple_knn._C import distCUDA2
 from torch import nn
 
-from model.gaussians import Gaussians
 from utils.general_utils import get_expon_lr_func
 from utils.graphics_utils import BasicPointCloud
 from utils.math import ActivationType, inverse_sigmoid, build_rotation
@@ -69,11 +68,11 @@ class Gaussians:
         self.T_sum = torch.empty(0)
         self.T_count = torch.empty(0)
 
-        self.optimizer = None
-
-        # hyperparameter
+        # optimizer_args
         self._percent_dense = 0
         self._xyz_scheduler_args = None
+
+        self.optimizer = None
 
     def reset_gradient_accum(self):
         self.max_radii2D = torch.zeros((self.get_num), device="cuda")
@@ -124,6 +123,8 @@ class Gaussians:
             self.max_sh_degree,
             self.opacity_activation_type,
             self.scaling_activation_type,
+            self.is_shared_opacity,
+            self.is_shared_feature,
 
             self.max_radii2D,
             self.xyz_gradient_accum,
@@ -146,6 +147,8 @@ class Gaussians:
             sh_degree,
             opacity_activation_type,
             scaling_activation_type,
+            is_shared_opacity,
+            is_shared_feature,
 
             self.max_radii2D,
             self.xyz_gradient_accum,
@@ -158,6 +161,8 @@ class Gaussians:
         assert sh_degree == self.max_sh_degree
         assert opacity_activation_type == self.opacity_activation_type
         assert scaling_activation_type == self.scaling_activation_type
+        assert is_shared_opacity == self.is_shared_opacity
+        assert is_shared_feature == self.is_shared_feature
 
     def update_learning_rate(self, iteration):
         ''' Learning rate scheduling per step '''
@@ -204,9 +209,9 @@ class Gaussians:
         self.xyz = optimizable_tensors["xyz"]
         self.scaling = optimizable_tensors["scaling"]
         self.rotation = optimizable_tensors["rotation"]
-        self.opacity = optimizable_tensors["opacity"]
-        self.features_dc = optimizable_tensors["f_dc"]
-        self.features_rest = optimizable_tensors["f_rest"]
+        self.opacity = optimizable_tensors["opacity"] if not self.is_shared_opacity else self.opacity
+        self.features_dc = optimizable_tensors["f_dc"] if not self.is_shared_feature else self.features_dc
+        self.features_rest = optimizable_tensors["f_rest"] if not self.is_shared_feature else self.features_rest
 
         self.max_radii2D = self.max_radii2D[valid_points_mask]
         self.xyz_gradient_accum = self.xyz_gradient_accum[valid_points_mask]
@@ -221,9 +226,9 @@ class Gaussians:
         self.xyz = optimizable_tensors["xyz"]
         self.scaling = optimizable_tensors["scaling"]
         self.rotation = optimizable_tensors["rotation"]
-        self.opacity = optimizable_tensors["opacity"]
-        self.features_dc = optimizable_tensors["f_dc"]
-        self.features_rest = optimizable_tensors["f_rest"]
+        self.opacity = optimizable_tensors["opacity"] if not self.is_shared_opacity else self.opacity
+        self.features_dc = optimizable_tensors["f_dc"] if not self.is_shared_feature else self.features_dc
+        self.features_rest = optimizable_tensors["f_rest"] if not self.is_shared_feature else self.features_rest
 
         self.reset_gradient_accum()
 
@@ -239,9 +244,9 @@ class Gaussians:
         new_xyz = self.xyz[selected_pts_mask]
         new_scaling = self.scaling[selected_pts_mask]
         new_rotation = self.rotation[selected_pts_mask]
-        new_opacity = self.opacity[selected_pts_mask]
-        new_features_dc = self.features_dc[selected_pts_mask]
-        new_features_rest = self.features_rest[selected_pts_mask]
+        new_opacity = self.opacity[selected_pts_mask] if not self.is_shared_opacity else None
+        new_features_dc = self.features_dc[selected_pts_mask] if not self.is_shared_feature else None
+        new_features_rest = self.features_rest[selected_pts_mask] if not self.is_shared_feature else None
 
         d = {
             "xyz": new_xyz,
@@ -251,10 +256,6 @@ class Gaussians:
             "f_dc": new_features_dc,
             "f_rest": new_features_rest,
         }
-        add_num = new_xyz.shape[0]
-        logging.info("Add {} points, {} points left".format(add_num, self.get_num + add_num))
-
-        self.densification_postfix(d)
 
         return selected_pts_mask, d
 
@@ -290,9 +291,10 @@ class Gaussians:
         new_xyz = self.cal_split_xyz(selected_pts_mask, N)
         new_scaling = self._inverse_scaling_activation(self.get_scaling[selected_pts_mask].repeat(N, 1) / (0.8 * N))
         new_rotation = self.rotation[selected_pts_mask].repeat(N, 1)
-        new_opacity = self.opacity[selected_pts_mask].repeat(N, 1)
-        new_features_dc = self.features_dc[selected_pts_mask].repeat(N, 1, 1)
-        new_features_rest = self.features_rest[selected_pts_mask].repeat(N, 1, 1)
+        new_opacity = self.opacity[selected_pts_mask].repeat(N, 1) if not self.is_shared_opacity else None
+        new_features_dc = self.features_dc[selected_pts_mask].repeat(N, 1, 1) if not self.is_shared_feature else None
+        new_features_rest = self.features_rest[selected_pts_mask].repeat(N, 1,
+                                                                         1) if not self.is_shared_feature else None
 
         d = {
             "xyz": new_xyz,
@@ -357,10 +359,6 @@ class Gaussians:
 
         torch.cuda.empty_cache()
 
-    def prune_seg_bg(self):
-        prune_mask = (self.xyz_gradient_accum == 0).squeeze()
-        self.prune_points(prune_mask)
-        self.reset_gradient_accum()
 
     @property
     def get_num(self):
@@ -400,7 +398,7 @@ class Gaussians:
         else:
             raise ValueError('channel must be 1 or 3')
         if self.is_shared_feature:
-            assert out.size() == 1
+            assert out.size(0) == 1
             out = out.expand(self.get_num, -1, -1)
         return out
 
@@ -434,6 +432,9 @@ class Gaussians:
                 .contiguous().cpu().numpy())
         f_rest = (self.features_rest.detach().transpose(1, 2).flatten(start_dim=1)
                   .contiguous().cpu().numpy())
+        if self.is_shared_feature:
+            f_dc = np.repeat(f_dc, xyz.shape[0], 0)
+            f_rest = np.repeat(f_rest, xyz.shape[0], 0)
         opacities = self.get_opacity.detach().cpu().numpy()
         scale = self.get_scaling.detach().cpu().numpy()
         rotation = self.get_rotation.detach().cpu().numpy()
@@ -496,14 +497,25 @@ class Gaussians:
 
         self.active_sh_degree = self.max_sh_degree
 
+        self.is_shared_feature = False
+        self.is_shared_opacity = False
+
     def add_gaussians(self, gs):
         gs: Gaussians
         assert self.opacity_activation_type == gs.opacity_activation_type
         assert self.scaling_activation_type == gs.scaling_activation_type
         assert self.max_sh_degree == gs.max_sh_degree
+        assert self.channel == gs.channel
         if self.active_sh_degree != gs.active_sh_degree:
             self.active_sh_degree = max(gs.active_sh_degree, self.active_sh_degree)
             logging.warning('active_sh_degree mismatch, use {}'.format(self.active_sh_degree))
+        if self.is_shared_opacity :
+            self.opacity = self.opacity.expand(self.get_num, -1)
+            self.is_shared_opacity = False
+        if self.is_shared_feature:
+            self.features_dc = self.features_dc.expand(self.get_num,-1,-1)
+            self.features_rest = self.features_rest.expand(self.get_num,-1,-1)
+            self.is_shared_feature = False
         self.xyz = torch.concat((self.xyz, gs.xyz), dim=0)
         self.features_dc = torch.concat((self.features_dc, gs.features_dc), dim=0)
         self.features_rest = torch.concat((self.features_rest, gs.features_rest), dim=0)
@@ -534,6 +546,22 @@ class Gaussians:
         opacities_new = inverse_sigmoid(value)
         optimizable_tensors = replace_tensor_to_optimizer(self.optimizer, opacities_new, "opacity")
         self.opacity = optimizable_tensors["opacity"]
+
+    def set_shared_opacity(self, shared_opacity=None):
+        if shared_opacity is None:
+            shared_opacity = torch.mean(self.opacity, dim=0, keepdim=True).detach()
+        self.opacity = shared_opacity
+        self.is_shared_opacity = True
+        self.no_optimizer()
+
+    def set_shared_feature(self, shared_feature_dc=None):
+        if shared_feature_dc is None:
+            shared_feature_dc = torch.mean(self.features_dc, dim=0, keepdim=True).detach()
+        self.features_dc = shared_feature_dc
+        self.features_rest = torch.zeros_like(self.features_rest[0:1])
+        self.active_sh_degree = 0
+        self.is_shared_feature = True
+        self.no_optimizer()
 
     def double_scaling(self, multiplier=2):
         new_scaling = self._inverse_scaling_activation(multiplier * self.get_scaling)
@@ -566,3 +594,7 @@ class Gaussians:
         new_xyz = torch.bmm(rots, samples.unsqueeze(-1)).squeeze(-1) + self.get_xyz[selected_pts_mask].repeat(N, 1)
 
         return new_xyz
+
+    def no_optimizer(self):
+        self.reset_gradient_accum()
+        self.optimizer = None

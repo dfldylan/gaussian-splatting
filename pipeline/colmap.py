@@ -1,3 +1,4 @@
+import copy
 import json
 import logging
 import os
@@ -12,7 +13,6 @@ from tqdm import tqdm
 
 import arguments
 import model
-from arguments import ModelParams
 from dataset import DataLoader, DatasetInfo
 from dataset.cameras import ShootModel
 from dataset.readers import readColmapSceneInfo
@@ -30,20 +30,26 @@ from utils.time_utils import TimeSeriesInfo
 
 
 @dataclass
+class ModelParams(arguments.ModelParams):
+    white_background: bool = True
+
+
+@dataclass
 class PipelineParams(arguments.PipelineParams):
     depths: str = ""
     seg: str = ""
-    initial: str = "0.pth"
+    initial: str = "chkpth0.pth"
 
 
 @dataclass
 class OptimizationParams(arguments.OptimizationParams):
     initial_iterations: int = 100
+    warm_iterations: int = 0
 
 
-def initial(initial_path, iterations, dataloader: DataLoader, opt: OptimizationParams,
-            pipe: PipelineParams) -> Gaussians:
-    gaussians = Gaussians(max_sh_degree=1)
+def training_initialize(iterations, dataloader: DataLoader, opt: OptimizationParams,
+                        pipe: PipelineParams) -> Gaussians:
+    gaussians = Gaussians()
     gaussians.create_from_pcd(dataloader.point_cloud)
     gaussians.setup(opt, dataloader.cameras_extent, position_lr_max_steps=opt.iterations)
     bg = torch.tensor([1, 1, 1], dtype=torch.float32, device="cuda")
@@ -69,10 +75,11 @@ def initial(initial_path, iterations, dataloader: DataLoader, opt: OptimizationP
                 gaussians.add_densification_stats(viewspace_point_tensor_grad, visibility_filter, T_sum.unsqueeze(-1),
                                                   T_count.unsqueeze(-1))
             gaussians.optimizer.zero_grad(set_to_none=True)
-    gaussians.prune_seg_bg()
-    logging.info("\nSaving Initial Checkpoint")
-    torch.save(gaussians.save(), initial_path)
-    return gaussians
+    gaussians_bg_mask = (gaussians.xyz_gradient_accum == 0).squeeze()
+    gs_bg = copy.deepcopy(gaussians)
+    gs_bg.prune_points(~gaussians_bg_mask)
+    gaussians.prune_points(gaussians_bg_mask)
+    return gaussians, gs_bg
 
 
 def training(source_path, model_path, mdl: ModelParams, opt: OptimizationParams, pipe: PipelineParams, checkpoint=None):
@@ -84,24 +91,27 @@ def training(source_path, model_path, mdl: ModelParams, opt: OptimizationParams,
     if opt.end_frame == -1:
         opt.end_frame = dataloader.time_info.num_frames - 1
 
-    if not os.path.exists(os.path.join(model_path, pipe.initial)):
-        logging.info("No found initial pth, start initial pipe")
-        gs_initial: Gaussians = initial(os.path.join(model_path, pipe.initial), opt.initial_iterations, dataloader, opt,
-                                        pipe)
-    else:
-        pass
-
     gaussfluids = Gaussfluids(mdl.sh_degree, base_time=dataloader.time_info.get_time(opt.end_frame),
-                              hidden_sizes=mdl.hidden_sizes, track_channel=mdl.track_channel,
-                              shared_feature=True, shared_opacity=True)
-
+                              hidden_sizes=mdl.hidden_sizes, track_channel=mdl.track_channel)
     if checkpoint:
-        pass
-        # (model_params, first_iter, bg_params, opt_dict) = torch.load(checkpoint)
-        # gaussfluids.restore(model_params)
-        # gaussfluids.setup(opt, dataloader.cameras_extent, position_lr_max_steps=opt.iterations, opt_dict=opt_dict)
+        (model_params, first_iter, bg_params, opt_dict) = torch.load(checkpoint)
+        gaussfluids.restore(model_params)
+        gaussfluids.setup(opt, dataloader.cameras_extent, position_lr_max_steps=opt.iterations, opt_dict=opt_dict)
     else:
-        gaussfluids.create_from_pcd(dataloader.point_cloud, init_color=pipe.dynamics_color)
+        initial_path = os.path.join(model_path, pipe.initial)
+        if not os.path.exists(initial_path):
+            logging.info("No found initial pth, start initial pipe")
+            gs_initial, gs_bg = training_initialize(opt.initial_iterations, dataloader, opt, pipe)
+            logging.info("\nSaving Initial Checkpoint")
+            torch.save((gs_initial.save(), gs_bg.save()), initial_path)
+        else:
+            (gs_initial_params, gs_bg_params) = torch.load(initial_path)
+            gs_initial, gs_bg = Gaussians(), Gaussians()
+            gs_initial.restore(gs_initial_params)
+            gs_bg.restore(gs_bg_params)
+        # gs_initial.set_shared_feature()
+        # gs_initial.set_shared_opacity()
+        gaussfluids.create_from_gaussians(gs_initial)
         gaussfluids.setup(opt, dataloader.cameras_extent, position_lr_max_steps=opt.iterations)
 
     bg_color = [1, 1, 1] if mdl.white_background else [0, 0, 0]
@@ -119,28 +129,24 @@ def training(source_path, model_path, mdl: ModelParams, opt: OptimizationParams,
         bg = torch.rand((3), device="cuda") if pipe.random_background else background
 
         # --------  Render asset preparation
-        if iteration <= opt.initial_iterations:
-            shoot_stack = dataloader.getTrainCameras()
-            shoot: ShootModel = choice(shoot_stack)
-            gaussians = gaussfluids.get_static(gaussfluids.base_time)
+        if iteration <= opt.warm_iterations:
+            frame_id = opt.end_frame
+        elif iteration <= opt.dynamics_iterations:
+            start_frame = int(
+                opt.end_frame - (iteration / opt.dynamics_iterations) * (opt.end_frame - opt.start_frame))
+            frame_id = choice(range(start_frame, opt.end_frame + 1))
         else:
-            if iteration <= opt.warm_iterations:
+            gaussfluids.update_learning_rate(iteration - opt.dynamics_iterations)
+            if iteration % 100 == 0:
                 frame_id = opt.end_frame
-            elif iteration <= opt.dynamics_iterations:
-                start_frame = int(
-                    opt.end_frame - (iteration / opt.dynamics_iterations) * (opt.end_frame - opt.start_frame))
-                frame_id = choice(range(start_frame, opt.end_frame + 1))
             else:
-                gaussfluids.update_learning_rate(iteration - opt.dynamics_iterations)
-                if iteration % 100 == 0:
-                    frame_id = opt.end_frame
-                else:
-                    start_frame = opt.start_frame
-                    frame_id = choice(range(start_frame, opt.end_frame + 1))
+                start_frame = opt.start_frame
+                frame_id = choice(range(start_frame, opt.end_frame + 1))
 
-            shoot_stack = dataloader.getTrainCameras(frame_index=frame_id)
-            shoot: ShootModel = choice(shoot_stack)
-            gaussians = gaussfluids.get_static(shoot.time)
+        shoot_stack = dataloader.getTrainCameras(frame_index=frame_id)
+        shoot: ShootModel = choice(shoot_stack)
+        gaussians = gaussfluids.get_static(shoot.time)
+        # gaussians.add_gaussians(gs_bg)
 
         # --------  Render result
         render_pkg = render(shoot, gaussians, pipe, bg)
@@ -150,29 +156,28 @@ def training(source_path, model_path, mdl: ModelParams, opt: OptimizationParams,
 
         # --------  Loss
         gt_image = shoot.image.cuda()
-        if iteration <= opt.initial_iterations:
-            loss = l1_loss(image, gt_image, mask=shoot.seg_mask)
+        Ll1 = l1_loss(image, gt_image, mask=shoot.seg_mask)
+        bg = torch.ones_like(gt_image) if mdl.white_background else torch.zeros_like(gt_image)
+        loss = 0.8 * Ll1 + 0.2 * l1_loss(image, bg, mask=~shoot.seg_mask)
+        # loss = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * (1.0 - ssim(image, gt_image))
+        if iteration <= opt.dynamics_iterations:
+            loss = loss + opt.lambda_feats * feature_loss(gaussfluids.features_dc.squeeze(1))
         else:
-            Ll1 = l1_loss(image, gt_image)
-            loss = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * (1.0 - ssim(image, gt_image))
-            if iteration <= opt.dynamics_iterations:
-                loss = loss + opt.lambda_feats * feature_loss(gaussfluids.features_dc.squeeze(1))
-            else:
-                loss = loss + opt.lambda_dens * density_loss(gaussians.get_xyz)
-                loss = loss + opt.lambda_aniso * aniso_loss(gaussians.get_scaling)
-                loss = loss + opt.lambda_vol * vol_loss(gaussians.get_scaling)
-                loss = loss + opt.lambda_opacity * opacity_loss(gaussfluids.get_opacity)
-                loss = loss + opt.lambda_feats * feature_loss(gaussfluids.features_dc.squeeze(1), l=2)
+            loss = loss + opt.lambda_dens * density_loss(gaussians.get_xyz)
+            loss = loss + opt.lambda_aniso * aniso_loss(gaussians.get_scaling)
+            loss = loss + opt.lambda_vol * vol_loss(gaussians.get_scaling)
+            loss = loss + opt.lambda_opacity * opacity_loss(gaussfluids.get_opacity)
+            loss = loss + opt.lambda_feats * feature_loss(gaussfluids.features_dc.squeeze(1), l=2)
 
-            # Depth regularization
-            if depth_l1_weight(iteration) > 0 and shoot.depth_reliable:
-                invDepth = render_pkg["depth"]
-                mono_invdepth = shoot.invdepthmap.cuda()
-                depth_mask = shoot.depth_mask.cuda()
+        # Depth regularization
+        if depth_l1_weight(iteration) > 0 and shoot.depth_reliable:
+            invDepth = render_pkg["depth"]
+            mono_invdepth = shoot.invdepthmap.cuda()
+            depth_mask = shoot.seg_mask.cuda()
 
-                Ll1depth_pure = torch.abs((invDepth - mono_invdepth) * depth_mask).mean()
-                Ll1depth = depth_l1_weight(iteration) * Ll1depth_pure
-                loss += Ll1depth
+            Ll1depth_pure = torch.abs((invDepth - mono_invdepth) * depth_mask).mean()
+            Ll1depth = depth_l1_weight(iteration) * Ll1depth_pure
+            loss += Ll1depth
 
         # --------  Backward
         loss.backward()
@@ -196,11 +201,7 @@ def training(source_path, model_path, mdl: ModelParams, opt: OptimizationParams,
                                                     T_count.unsqueeze(-1))
 
             # -------- Density control
-            if iteration < opt.initial_iterations:
-                pass
-            elif iteration == opt.initial_iterations:
-                gaussfluids.prune_seg_bg()
-            elif iteration <= opt.warm_iterations:
+            if iteration <= opt.warm_iterations:
                 if iteration % 500 == 0 and iteration != opt.warm_iterations:
                     gaussfluids.densify_and_prune(opt.densify_grad_threshold, opt.min_opacity,
                                                   dataloader.cameras_extent, opt.max_screen_size)
@@ -230,14 +231,12 @@ def training(source_path, model_path, mdl: ModelParams, opt: OptimizationParams,
                 gaussfluids.split_ball(opt.target_radius, max_num=opt.max_num_points)
 
             # --------  Optimizer step
-            if iteration <= opt.initial_iterations:
-                gaussfluids.optimizer.zero_grad(set_to_none=True)
-            elif iteration <= opt.iterations:
+            if iteration <= opt.iterations:
                 gaussfluids.optimizer.step()
                 gaussfluids.optimizer.zero_grad(set_to_none=True)
 
             # --------  Saving
-            if iteration == opt.initial_iterations or iteration % 1000 == 0:
+            if iteration % 1000 == 0:
                 print("\n[ITER {}] Saving Checkpoint".format(iteration))
                 torch.save((gaussfluids.save(), iteration, None, gaussfluids.optimizer.state_dict()),
                            model_path + "/chkpnt" + str(iteration) + ".pth")

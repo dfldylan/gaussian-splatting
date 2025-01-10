@@ -3,6 +3,7 @@ import logging
 import torch
 from torch import nn
 
+
 # todo whether size(0) is 1
 
 def prune_optimizer(optimizer, mask):
@@ -11,7 +12,7 @@ def prune_optimizer(optimizer, mask):
 
     optimizable_tensors = {}
     for group in optimizer.param_groups:
-        if len(group['params']) == 1:
+        if len(group['params']) == 1 and group['params'][0].size(0) != 1:
             stored_state = optimizer.state.get(group['params'][0], None)
             if stored_state is not None:
                 stored_state["exp_avg"] = stored_state["exp_avg"][mask]
@@ -47,7 +48,7 @@ def replace_tensor_to_optimizer(optimizer, tensor, name):
 def cat_tensors_to_optimizer(optimizer, tensors_dict):
     optimizable_tensors = {}
     for group in optimizer.param_groups:
-        if len(group["params"]) == 1:
+        if len(group["params"]) == 1 and group['params'][0].size(0) != 1:
             extension_tensor = tensors_dict[group["name"]]
             stored_state = optimizer.state.get(group['params'][0], None)
             if stored_state is not None:

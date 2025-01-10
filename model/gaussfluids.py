@@ -31,11 +31,15 @@ class Gaussfluids(Gaussians):
         self._embedder = Embedder(multires=self.multires, input_dims=1)
         self.mlp = MLP(track_channel + self._embedder.out_dim, hidden_sizes, 3 + 3 + 4)
 
-        self.optimizer = None
-
     def create_from_pcd(self, pcd: BasicPointCloud, init_color=None):
         super().create_from_pcd(pcd, init_color)
         self.feats = nn.Parameter(torch.zeros((self.get_num, self.track_channel), device='cuda'))
+
+    def create_from_gaussians(self, gaussians: Gaussians):
+        for key, value in vars(gaussians).items():
+            setattr(self, key, value)
+        self.feats = nn.Parameter(torch.zeros((self.get_num, self.track_channel), device='cuda'))
+        self.no_optimizer()
 
     def save(self):
         _super = super().save()
