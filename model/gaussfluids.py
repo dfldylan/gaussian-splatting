@@ -82,7 +82,7 @@ class Gaussfluids(Gaussians):
         return optimizable_tensors
 
     def densification_postfix(self, d):
-        optimizable_tensors = super().densification_postfix()
+        optimizable_tensors = super().densification_postfix(d)
         self.feats = optimizable_tensors["track_feats"]
         return optimizable_tensors
 

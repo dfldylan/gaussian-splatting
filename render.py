@@ -1,28 +1,11 @@
 import os
 from dataclasses import dataclass, field
 
-import torch
 from argparse_dataclass import ArgumentParser
 
 from dataset import DatasetType, detect_dataset_type
-# from dataset.readers import readNeurofluidInfo
-from pipeline import scalarflow
-# from pipeline import neurofluid
+from pipeline import scalarflow, colmap
 from utils.general_utils import safe_state, logging_setup
-
-
-def handle_factor(factor, value: torch.Tensor) -> torch.Tensor:
-    if factor.endswith('%'):
-        # Remove the "%" and convert to float to calculate the percentage value.
-        percentage = float(factor.rstrip('%'))
-        relative_value = value * (percentage / 100.0)
-        return relative_value
-    else:
-        # Treat as an absolute value.
-        absolute_value = float(factor) * torch.ones_like(value)
-        return absolute_value
-
-
 
 
 @dataclass
@@ -59,6 +42,13 @@ if __name__ == "__main__":
                              args.scaling_factor, args.opacity_factor, args.bg_color, args.gs_color)
     elif dataset_type == DatasetType.Neurofluid:
         pass
+    elif dataset_type == DatasetType.ColmapScene:
+        mp, _ = ArgumentParser(colmap.ModelParams, allow_abbrev=False).parse_known_args()
+        pp, _ = ArgumentParser(colmap.PipelineParams, allow_abbrev=False).parse_known_args()
+        op, _ = ArgumentParser(colmap.OptimizationParams, allow_abbrev=False).parse_known_args()
+        colmap.rendering(source_path, os.path.join(model_path, "output"), mp, op, pp, args.start_checkpoint,
+                         args.scaling_factor, args.opacity_factor, args.bg_color, args.gs_color)
+
 
     else:
         raise ValueError(f"Unsupported dataset type: {dataset_type}")

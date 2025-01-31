@@ -96,3 +96,15 @@ def safe_state(silent):
 def logging_setup():
     logging.basicConfig(level=logging.DEBUG) if is_debug_mode() else logging.basicConfig(level=logging.INFO)
     logging.getLogger("PIL").setLevel(logging.INFO)
+
+
+def handle_factor(factor, value: torch.Tensor) -> torch.Tensor:
+    if factor.endswith('%'):
+        # Remove the "%" and convert to float to calculate the percentage value.
+        percentage = float(factor.rstrip('%'))
+        relative_value = value * (percentage / 100.0)
+        return relative_value
+    else:
+        # Treat as an absolute value.
+        absolute_value = float(factor) * torch.ones_like(value)
+        return absolute_value

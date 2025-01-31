@@ -18,10 +18,9 @@ from dataset.cameras import ShootModel
 from dataset.readers import readColmapSceneInfo
 from model.gaussfluids import Gaussfluids
 from model.gaussians import Gaussians
-from render import handle_factor
 from renderer import render
 from renderer.network_tools import handle_network
-from utils.general_utils import get_expon_lr_func
+from utils.general_utils import get_expon_lr_func, handle_factor
 from utils.loss_utils import l1_loss, ssim, density_loss, aniso_loss, vol_loss, opacity_loss, feature_loss
 from utils.math import ActivationType
 from utils.sh_utils import rgb_str_to_sh_tensor
@@ -38,7 +37,7 @@ class ModelParams(arguments.ModelParams):
 class PipelineParams(arguments.PipelineParams):
     depths: str = ""
     seg: str = ""
-    initial: str = "chkpth0.pth"
+    initial: str = "chkpnt0.pth"
 
 
 @dataclass
@@ -49,7 +48,7 @@ class OptimizationParams(arguments.OptimizationParams):
 
 def training_initialize(iterations, dataloader: DataLoader, opt: OptimizationParams,
                         pipe: PipelineParams) -> Gaussians:
-    gaussians = Gaussians()
+    gaussians = Gaussians(max_sh_degree=1)
     gaussians.create_from_pcd(dataloader.point_cloud)
     gaussians.setup(opt, dataloader.cameras_extent, position_lr_max_steps=opt.iterations)
     bg = torch.tensor([1, 1, 1], dtype=torch.float32, device="cuda")
@@ -86,19 +85,14 @@ def training(source_path, model_path, mdl: ModelParams, opt: OptimizationParams,
     first_iter = 0
     dump_cfg(mdl, model_path)
 
-    dataset: DatasetInfo = readColmapSceneInfo(source_path, pipe.depths, pipe.seg)
-    dataloader = DataLoader(mdl.data_device, dataset, shuffle=True, is_nerf_synthetic=False)
-    if opt.end_frame == -1:
-        opt.end_frame = dataloader.time_info.num_frames - 1
+    dataset, dataloader, gaussfluids = build_dataloader(source_path, mdl, opt, pipe, shuffle=True)
 
-    gaussfluids = Gaussfluids(mdl.sh_degree, base_time=dataloader.time_info.get_time(opt.end_frame),
-                              hidden_sizes=mdl.hidden_sizes, track_channel=mdl.track_channel)
     if checkpoint:
         (model_params, first_iter, bg_params, opt_dict) = torch.load(checkpoint)
         gaussfluids.restore(model_params)
         gaussfluids.setup(opt, dataloader.cameras_extent, position_lr_max_steps=opt.iterations, opt_dict=opt_dict)
     else:
-        initial_path = os.path.join(model_path, pipe.initial)
+        initial_path = pipe.initial
         if not os.path.exists(initial_path):
             logging.info("No found initial pth, start initial pipe")
             gs_initial, gs_bg = training_initialize(opt.initial_iterations, dataloader, opt, pipe)
@@ -106,7 +100,7 @@ def training(source_path, model_path, mdl: ModelParams, opt: OptimizationParams,
             torch.save((gs_initial.save(), gs_bg.save()), initial_path)
         else:
             (gs_initial_params, gs_bg_params) = torch.load(initial_path)
-            gs_initial, gs_bg = Gaussians(), Gaussians()
+            gs_initial, gs_bg = Gaussians(max_sh_degree=1), Gaussians(max_sh_degree=1)
             gs_initial.restore(gs_initial_params)
             gs_bg.restore(gs_bg_params)
         # gs_initial.set_shared_feature()
@@ -131,10 +125,12 @@ def training(source_path, model_path, mdl: ModelParams, opt: OptimizationParams,
         # --------  Render asset preparation
         if iteration <= opt.warm_iterations:
             frame_id = opt.end_frame
+            mask_id = opt.end_frame
         elif iteration <= opt.dynamics_iterations:
             start_frame = int(
                 opt.end_frame - (iteration / opt.dynamics_iterations) * (opt.end_frame - opt.start_frame))
             frame_id = choice(range(start_frame, opt.end_frame + 1))
+            mask_id = choice(range(start_frame, opt.end_frame + 1))
         else:
             gaussfluids.update_learning_rate(iteration - opt.dynamics_iterations)
             if iteration % 100 == 0:
@@ -142,6 +138,7 @@ def training(source_path, model_path, mdl: ModelParams, opt: OptimizationParams,
             else:
                 start_frame = opt.start_frame
                 frame_id = choice(range(start_frame, opt.end_frame + 1))
+            mask_id = choice(range(start_frame, opt.end_frame + 1))
 
         shoot_stack = dataloader.getTrainCameras(frame_index=frame_id)
         shoot: ShootModel = choice(shoot_stack)
@@ -157,8 +154,12 @@ def training(source_path, model_path, mdl: ModelParams, opt: OptimizationParams,
         # --------  Loss
         gt_image = shoot.image.cuda()
         Ll1 = l1_loss(image, gt_image, mask=shoot.seg_mask)
-        bg = torch.ones_like(gt_image) if mdl.white_background else torch.zeros_like(gt_image)
-        loss = 0.8 * Ll1 + 0.2 * l1_loss(image, bg, mask=~shoot.seg_mask)
+        random_shoot = choice(dataloader.getTrainCameras(frame_index=mask_id))
+        random_render_img = render(random_shoot, gaussians, pipe, bg)["render"]
+        bg_image = torch.ones_like(random_render_img)
+        bg_image[:] = bg.view(3, 1, 1)
+        bg_loss = l1_loss(random_render_img, bg_image, mask=~random_shoot.seg_mask)
+        loss = 0.8 * Ll1 + 0.2 * bg_loss
         # loss = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * (1.0 - ssim(image, gt_image))
         if iteration <= opt.dynamics_iterations:
             loss = loss + opt.lambda_feats * feature_loss(gaussfluids.features_dc.squeeze(1))
@@ -228,7 +229,7 @@ def training(source_path, model_path, mdl: ModelParams, opt: OptimizationParams,
                 gaussfluids.prune_points((torch.vstack(
                     [gaussfluids.get_scaling[:, (0, 2)].prod(1), gaussfluids.get_scaling[:, (0, 1)].prod(1),
                      gaussfluids.get_scaling[:, (1, 2)].prod(1)]) > 1e-2).any(0))
-                gaussfluids.split_ball(opt.target_radius, max_num=opt.max_num_points)
+                # gaussfluids.split_ball(opt.target_radius, max_num=opt.max_num_points)
 
             # --------  Optimizer step
             if iteration <= opt.iterations:
@@ -245,11 +246,9 @@ def training(source_path, model_path, mdl: ModelParams, opt: OptimizationParams,
 def rendering(source_path, output_path, mdl: ModelParams, opt: OptimizationParams, pipe: PipelineParams, checkpoint,
               scaling_factor=None, opacity_factor=None, bg_color=None, gs_color=None):
     dataset, dataloader, gaussfluids = build_dataloader(source_path, mdl, opt, pipe, shuffle=False)
-    (model_params, first_iter) = torch.load(checkpoint)
+    (model_params, first_iter, _, _) = torch.load(checkpoint)
     gaussfluids.restore(model_params)
 
-    shoot: ShootModel = dataloader.getTrainCameras()[0]
-    logging.info(f"Using {shoot.shoot_info.image_name} as cam.")
     render_path = os.path.join(output_path, "renders")
     gts_path = os.path.join(output_path, "gt")
     os.makedirs(render_path, exist_ok=True)
@@ -284,6 +283,7 @@ def rendering(source_path, output_path, mdl: ModelParams, opt: OptimizationParam
                     gaussians.features_dc = gs_color_sh.unsqueeze(0).unsqueeze(0).tile(gaussians.get_num, 1, 1)
                 else:
                     raise ValueError("gs_color_sh must be either 3 or 1 dimensional")
+            shoot = dataloader.getTrainCameras(frame_index=frame_index)[0]
             rendering = render(shoot, gaussians, pipe, background)["render"]
             gt = shoot.image[0:3, :, :]
             torchvision.utils.save_image(rendering, os.path.join(render_path, '{0:04d}'.format(frame_index) + ".png"))
@@ -291,16 +291,13 @@ def rendering(source_path, output_path, mdl: ModelParams, opt: OptimizationParam
 
 
 def export_npz(source_path, output_path, mdl: ModelParams, opt: OptimizationParams, pipe: PipelineParams,
-               checkpoint, time_info: TimeSeriesInfo = None, ply=True):
+               checkpoint, time_info: TimeSeriesInfo = None, ply=False):
     with torch.no_grad():
         dataset, dataloader, gaussfluids = build_dataloader(source_path, mdl, opt, pipe, shuffle=False)
-        (model_params, first_iter, _) = torch.load(checkpoint)
+        (model_params, first_iter, _, _) = torch.load(checkpoint)
         gaussfluids.restore(model_params)
 
         time_info = dataloader.time_info if time_info is None else time_info
-
-        bg_color = [1, 1, 1] if mdl.white_background else [0, 0, 0]
-        background = torch.tensor(bg_color, dtype=torch.float32, device="cuda")
 
         save_path = os.path.join(output_path, 'npz')
         os.makedirs(save_path, exist_ok=True)
@@ -308,27 +305,34 @@ def export_npz(source_path, output_path, mdl: ModelParams, opt: OptimizationPara
         json.dump(time_info._asdict(), open(os.path.join(save_path, 'time_info.json'), 'w'))
 
         for i in range(opt.start_frame, opt.end_frame + 1):
-            handle_network(pipe, gaussfluids, time_info, background, (i == opt.end_frame),
-                           source_path, opt.start_frame, opt.end_frame, opt.min_opacity)
             time = time_info.start_time + i * time_info.time_step
             logging.info('Frame {}, Time {}'.format(i, time))
             gaussians = gaussfluids.get_static(time)
             gaussians.save_ply(os.path.join(save_path, 'ply', '{:04}.ply'.format(i))) if ply else None
             np.savez(os.path.join(save_path, '{:04}.npz'.format(i)), pos=gaussians.get_xyz.cpu().detach().numpy())
 
+        initial_path = pipe.initial
+        (gs_initial_params, gs_bg_params) = torch.load(initial_path)
+        gs_initial, gs_bg = Gaussians(max_sh_degree=1), Gaussians(max_sh_degree=1)
+        gs_initial.restore(gs_initial_params)
+        # gs_bg.restore(gs_bg_params)
+        # gs_bg.save_ply(os.path.join(save_path, 'ply', 'bg.ply')) if ply else None
+        # np.savez(os.path.join(save_path, 'bg.npz'), box=gs_bg.get_xyz.cpu().detach().numpy())
+        np.savez(os.path.join(save_path, 'init_particle.npz'), pos=gs_initial.get_xyz.cpu().detach().numpy())
+
 
 def network_viewer(source_path, mdl: ModelParams, opt: OptimizationParams, pipe: PipelineParams, checkpoint,
                    gaussians_bg=None):
     with torch.no_grad():
         dataset, dataloader, gaussfluids = build_dataloader(source_path, mdl, opt, pipe, shuffle=False)
-        (model_params, first_iter, _) = torch.load(checkpoint)
+        (model_params, first_iter, _, _) = torch.load(checkpoint)
         gaussfluids.restore(model_params)
 
     time_info: TimeSeriesInfo = dataloader.time_info
     bg_color = [1, 1, 1] if mdl.white_background else [0, 0, 0]
     background = torch.tensor(bg_color, dtype=torch.float32, device="cuda")
 
-    handle_network(pipe, gaussfluids, time_info, background, False, source_path, opt.start_frame,
+    handle_network(pipe, gaussfluids, time_info, background, True, source_path, opt.start_frame,
                    opt.end_frame, opt.min_opacity, gaussians_bg)
 
 

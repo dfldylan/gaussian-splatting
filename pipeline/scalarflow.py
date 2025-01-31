@@ -17,7 +17,7 @@ from dataset import DataLoader, DatasetInfo
 from dataset.cameras import ShootModel
 from dataset.readers import readScalarFlowInfo
 from model.gaussfluids import Gaussfluids
-from render import handle_factor
+from utils.general_utils import handle_factor
 from renderer import render
 from renderer.network_tools import handle_network
 from utils.loss_utils import l1_loss, ssim, density_loss, aniso_loss, vol_loss, opacity_loss, feature_loss
