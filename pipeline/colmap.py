@@ -1,14 +1,13 @@
 import copy
 import json
 import logging
-import os
-from dataclasses import dataclass
-from random import choice
-
 import numpy as np
+import os
 import torch
 import torchvision
+from dataclasses import dataclass
 from matplotlib.colors import to_rgb
+from random import choice
 from tqdm import tqdm
 
 import arguments
@@ -21,7 +20,7 @@ from model.gaussians import Gaussians
 from renderer import render
 from renderer.network_tools import handle_network
 from utils.general_utils import get_expon_lr_func, handle_factor
-from utils.loss_utils import l1_loss, ssim, density_loss, aniso_loss, vol_loss, opacity_loss, feature_loss
+from utils.loss_utils import l1_loss, density_loss, aniso_loss, vol_loss, opacity_loss, feature_loss
 from utils.math import ActivationType
 from utils.sh_utils import rgb_str_to_sh_tensor
 from utils.system_utils import dump_cfg

@@ -1,15 +1,14 @@
 import os
-from random import choice
-
 import torch
+from random import choice
 from tqdm import tqdm
 
 from arguments.__init__ import ModelParams, PipelineParams, OptimizationParams
 from dataset import DataLoader
 from dataset.cameras import ShootModel
 from dataset.readers import readNeurofluidInfo
-from model.gaussians import Gaussians
 from model.gaussfluids import Gaussfluids
+from model.gaussians import Gaussians
 from renderer import render, network_gui
 from renderer.network_tools import handle_network
 from utils.general_utils import safe_state

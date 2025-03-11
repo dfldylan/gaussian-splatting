@@ -10,7 +10,6 @@
 #
 
 from random import choice
-
 from tqdm import tqdm
 
 from arguments.__init__ import ModelParams, OptimizationParams
