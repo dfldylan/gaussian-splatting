@@ -3,9 +3,6 @@ LABEL maintainer="dfldylan@qq.com"
 ENV TZ Asia/Shanghai
 #ENV http_proxy=http://router4.ustb-ai3d.cn:3128
 #ENV https_proxy=http://router4.ustb-ai3d.cn:3128
-#RUN echo 'Acquire::Retries "10";' > /etc/apt/apt.conf.d/80retries
-#RUN sed -i 's|http://archive.ubuntu.com/ubuntu|http://mirrors.mit.edu/ubuntu|g' /etc/apt/sources.list \
-#    && sed -i 's|http://security.ubuntu.com/ubuntu|http://mirrors.mit.edu/ubuntu|g' /etc/apt/sources.list
 RUN apt-get update && apt-get install -y wget git vim openssh-server net-tools libgl-dev libglm-dev
 RUN wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh -O /miniconda.sh \
     && bash /miniconda.sh -b -p /miniconda \
