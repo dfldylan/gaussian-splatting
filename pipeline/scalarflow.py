@@ -1,12 +1,13 @@
 import json
 import logging
-import numpy as np
 import os
+from dataclasses import dataclass
+from random import choice
+
+import numpy as np
 import torch
 import torchvision
-from dataclasses import dataclass
 from matplotlib.colors import to_rgb
-from random import choice
 from tqdm import tqdm
 
 import arguments
@@ -50,10 +51,12 @@ def training(source_path, model_path, mdl: ModelParams, opt: OptimizationParams,
     if checkpoint:
         (model_params, first_iter, opt_dict) = torch.load(checkpoint)
         gaussfluids.restore(model_params)
-        gaussfluids.setup(opt, dataloader.cameras_extent, position_lr_max_steps=opt.iterations, opt_dict=opt_dict)
+        gaussfluids.setup(opt, dataloader.cameras_extent,
+                          position_lr_max_steps=opt.iterations - opt.dynamics_iterations, opt_dict=opt_dict)
     else:
         gaussfluids.create_from_pcd(dataloader.point_cloud, init_color=pipe.dynamics_color)
-        gaussfluids.setup(opt, dataloader.cameras_extent, position_lr_max_steps=opt.iterations)
+        gaussfluids.setup(opt, dataloader.cameras_extent,
+                          position_lr_max_steps=opt.iterations - opt.dynamics_iterations)
 
     bg_color = [1, 1, 1] if mdl.white_background else [0, 0, 0]
     background = torch.tensor(bg_color, dtype=torch.float32, device="cuda")

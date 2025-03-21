@@ -1,13 +1,14 @@
 import copy
 import json
 import logging
-import numpy as np
 import os
+from dataclasses import dataclass
+from random import choice
+
+import numpy as np
 import torch
 import torchvision
-from dataclasses import dataclass
 from matplotlib.colors import to_rgb
-from random import choice
 from tqdm import tqdm
 
 import arguments
@@ -49,9 +50,10 @@ def training_initialize(iterations, dataloader: DataLoader, opt: OptimizationPar
                         pipe: PipelineParams) -> Gaussians:
     gaussians = Gaussians(max_sh_degree=1)
     gaussians.create_from_pcd(dataloader.point_cloud)
-    gaussians.setup(opt, dataloader.cameras_extent, position_lr_max_steps=opt.iterations)
+    gaussians.setup(opt, dataloader.cameras_extent, position_lr_max_steps=iterations)
     bg = torch.tensor([1, 1, 1], dtype=torch.float32, device="cuda")
     for iteration in range(iterations):
+        gaussians.update_learning_rate(iteration)
         shoot_stack = dataloader.getTrainCameras()
         shoot: ShootModel = choice(shoot_stack)
 
@@ -89,7 +91,8 @@ def training(source_path, model_path, mdl: ModelParams, opt: OptimizationParams,
     if checkpoint:
         (model_params, first_iter, bg_params, opt_dict) = torch.load(checkpoint)
         gaussfluids.restore(model_params)
-        gaussfluids.setup(opt, dataloader.cameras_extent, position_lr_max_steps=opt.iterations, opt_dict=opt_dict)
+        gaussfluids.setup(opt, dataloader.cameras_extent,
+                          position_lr_max_steps=opt.iterations - opt.dynamics_iterations, opt_dict=opt_dict)
     else:
         initial_path = pipe.initial
         if not os.path.exists(initial_path):
@@ -105,7 +108,8 @@ def training(source_path, model_path, mdl: ModelParams, opt: OptimizationParams,
         # gs_initial.set_shared_feature()
         # gs_initial.set_shared_opacity()
         gaussfluids.create_from_gaussians(gs_initial)
-        gaussfluids.setup(opt, dataloader.cameras_extent, position_lr_max_steps=opt.iterations)
+        gaussfluids.setup(opt, dataloader.cameras_extent,
+                          position_lr_max_steps=opt.iterations - opt.dynamics_iterations)
 
     bg_color = [1, 1, 1] if mdl.white_background else [0, 0, 0]
     background = torch.tensor(bg_color, dtype=torch.float32, device="cuda")
