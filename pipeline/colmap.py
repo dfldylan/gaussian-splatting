@@ -89,7 +89,7 @@ def training(source_path, model_path, mdl: ModelParams, opt: OptimizationParams,
     dataset, dataloader, gaussfluids = build_dataloader(source_path, mdl, opt, pipe, shuffle=True)
 
     if checkpoint:
-        (model_params, first_iter, bg_params, opt_dict) = torch.load(checkpoint)
+        (model_params, first_iter, opt_dict) = torch.load(checkpoint)
         gaussfluids.restore(model_params)
         gaussfluids.setup(opt, dataloader.cameras_extent,
                           position_lr_max_steps=opt.iterations - opt.dynamics_iterations, opt_dict=opt_dict)
@@ -130,8 +130,7 @@ def training(source_path, model_path, mdl: ModelParams, opt: OptimizationParams,
             frame_id = opt.end_frame
             mask_id = opt.end_frame
         elif iteration <= opt.dynamics_iterations:
-            start_frame = int(
-                opt.end_frame - (iteration / opt.dynamics_iterations) * (opt.end_frame - opt.start_frame))
+            start_frame = int(opt.end_frame - (iteration / opt.dynamics_iterations) * (opt.end_frame - opt.start_frame))
             frame_id = choice(range(start_frame, opt.end_frame + 1))
             mask_id = choice(range(start_frame, opt.end_frame + 1))
         else:
@@ -242,7 +241,7 @@ def training(source_path, model_path, mdl: ModelParams, opt: OptimizationParams,
             # --------  Saving
             if iteration % 1000 == 0:
                 print("\n[ITER {}] Saving Checkpoint".format(iteration))
-                torch.save((gaussfluids.save(), iteration, None, gaussfluids.optimizer.state_dict()),
+                torch.save((gaussfluids.save(), iteration, gaussfluids.optimizer.state_dict()),
                            model_path + "/chkpnt" + str(iteration) + ".pth")
 
 

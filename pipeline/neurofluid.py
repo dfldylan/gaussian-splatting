@@ -27,20 +27,14 @@ class OptimizationParams(arguments.OptimizationParams):
 def training(source_path, model_path, mdl: ModelParams, opt: OptimizationParams, pipe: PipelineParams, checkpoint=None):
     first_iter = 0
     dump_cfg(mdl, model_path)
-    dataset: DatasetInfo = readNeurofluidInfo(source_path, eval=False)
-    dataloader = DataLoader(mdl.data_device, dataset)
-    if opt.end_frame == -1:
-        opt.end_frame = dataloader.time_info.num_frames - 1
 
-    gaussfluids = Gaussfluids(mdl.sh_degree, base_time=dataloader.time_info.get_time(opt.end_frame),
-                              hidden_sizes=mdl.hidden_sizes, track_channel=mdl.track_channel)
+    dataset, dataloader, gaussfluids = build_dataloader(source_path, mdl, opt, pipe, shuffle=True)
 
     if checkpoint:
         (model_params, first_iter, opt_dict) = torch.load(checkpoint)
         gaussfluids.restore(model_params)
         gaussfluids.setup(opt, dataloader.cameras_extent,
-                          position_lr_max_steps=opt.iterations - opt.dynamics_iterations,
-                          opt_dict=opt_dict)
+                          position_lr_max_steps=opt.iterations - opt.dynamics_iterations, opt_dict=opt_dict)
     else:
         gaussfluids.create_from_pcd(dataloader.point_cloud, init_color=pipe.dynamics_color)
         gaussfluids.setup(opt, dataloader.cameras_extent,
@@ -55,14 +49,14 @@ def training(source_path, model_path, mdl: ModelParams, opt: OptimizationParams,
     for iteration in range(first_iter, opt.iterations + 1):
         handle_network(pipe, gaussfluids, dataloader.time_info, background,
                        (iteration == int(opt.iterations)), source_path, opt.start_frame, opt.end_frame, opt.min_opacity)
-
+        # --------  Common setup
         bg = torch.rand((3), device="cuda") if pipe.random_background else background
 
+        # --------  Render asset preparation
         if iteration <= opt.warm_iterations:
             frame_id = opt.end_frame
         elif iteration <= opt.dynamics_iterations:
-            start_frame = int(opt.end_frame -
-                              (iteration / opt.dynamics_iterations) * (opt.end_frame - opt.start_frame))
+            start_frame = int(opt.end_frame - (iteration / opt.dynamics_iterations) * (opt.end_frame - opt.start_frame))
             frame_id = choice(range(start_frame, opt.end_frame + 1))
         else:
             gaussfluids.update_learning_rate(iteration - opt.dynamics_iterations)
@@ -76,15 +70,17 @@ def training(source_path, model_path, mdl: ModelParams, opt: OptimizationParams,
         shoot: ShootModel = choice(shoot_stack)
         gaussians = gaussfluids.get_static(shoot.time)
 
+        # --------  Render result
         render_pkg = render(shoot, gaussians, pipe, bg)
         image, viewspace_point_tensor = render_pkg["render"], render_pkg["viewspace_points"]
         visibility_filter, radii = render_pkg["visibility_filter"], render_pkg["radii"]
         T_sum, T_count = render_pkg["T_sum"], render_pkg["T_count"]
 
-        # Loss
+        # --------  Loss
         gt_image = shoot.image.cuda()
-        Ll1 = l1_loss(image, gt_image)
-        loss = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * (1.0 - ssim(image, gt_image))
+        Ll1 = l1_loss(image, gt_image, mask=shoot.seg_mask)
+        l_bg = l1_loss(image, bg[:, None, None] * torch.ones_like(image), mask=~shoot.seg_mask)
+        loss = 0.6 * Ll1 + 0.2 * l_bg + 0.2 * (1.0 - ssim(image, gt_image))
         if iteration <= opt.dynamics_iterations:
             loss = loss + opt.lambda_feats * feature_loss(gaussfluids.features_dc.squeeze(1))
         else:
@@ -93,10 +89,13 @@ def training(source_path, model_path, mdl: ModelParams, opt: OptimizationParams,
             loss = loss + opt.lambda_vol * vol_loss(gaussians.get_scaling)
             loss = loss + opt.lambda_opacity * opacity_loss(gaussfluids.get_opacity)
             loss = loss + opt.lambda_feats * feature_loss(gaussfluids.features_dc.squeeze(1), l=2)
+
+        # --------  Backward
         loss.backward()
 
+        # --------  Postprocessing
         with torch.no_grad():
-            # Progress bar
+            # --------  Progress bar
             ema_loss_for_log = 0.4 * loss.item() + 0.6 * ema_loss_for_log
             if iteration % 100 == 0:
                 progress_bar.set_postfix({"Loss": f"{ema_loss_for_log:.{7}f}"})
@@ -104,7 +103,7 @@ def training(source_path, model_path, mdl: ModelParams, opt: OptimizationParams,
             if iteration == opt.iterations:
                 progress_bar.close()
 
-            # Keep track of max radii in image-space for pruning
+            # --------  Record grad
             viewspace_point_tensor_grad = viewspace_point_tensor.grad
             if visibility_filter.sum().cpu().numpy() != 0:
                 gaussfluids.max_radii2D[visibility_filter] = torch.max(gaussfluids.max_radii2D[visibility_filter],
@@ -112,6 +111,7 @@ def training(source_path, model_path, mdl: ModelParams, opt: OptimizationParams,
                 gaussfluids.add_densification_stats(viewspace_point_tensor_grad, visibility_filter, T_sum.unsqueeze(-1),
                                                     T_count.unsqueeze(-1))
 
+            # -------- Density control
             if iteration <= opt.warm_iterations:
                 if iteration % 1000 == 0 and iteration != opt.warm_iterations:
                     gaussfluids.densify_and_prune(opt.densify_grad_threshold, opt.min_opacity,
@@ -135,11 +135,18 @@ def training(source_path, model_path, mdl: ModelParams, opt: OptimizationParams,
                                               dataloader.cameras_extent, opt.max_screen_size, prune_min_iters=200)
                 gaussfluids.split_ellipsoids(opt.target_radius, max_num=opt.max_num_points)
 
-            # Optimizer step
+            elif iteration == opt.iterations:
+                gaussfluids.prune_points((torch.vstack(
+                    [gaussfluids.get_scaling[:, (0, 2)].prod(1), gaussfluids.get_scaling[:, (0, 1)].prod(1),
+                     gaussfluids.get_scaling[:, (1, 2)].prod(1)]) > 1e-2).any(0))
+                # gaussfluids.split_ball(opt.target_radius, max_num=opt.max_num_points)
+
+            # --------  Optimizer step
             if iteration <= opt.iterations:
                 gaussfluids.optimizer.step()
                 gaussfluids.optimizer.zero_grad(set_to_none=True)
 
+            # --------  Saving
             if iteration % 1000 == 0:
                 print("\n[ITER {}] Saving Checkpoint".format(iteration))
                 torch.save((gaussfluids.save(), iteration, gaussfluids.optimizer.state_dict()),
@@ -231,6 +238,15 @@ def export_npz(source_path, output_path, mdl: ModelParams, opt: OptimizationPara
 #     mask = gaussian_frame.get_opacity.cpu().numpy() < 0.1
 #     xyz_filtered = xyz[mask[:, 0]]
 #     return xyz_filtered
+
+def build_dataloader(source_path, mdl: ModelParams, opt: OptimizationParams, pipe: PipelineParams, shuffle=True):
+    dataset: DatasetInfo = readNeurofluidInfo(source_path, eval=False)
+    dataloader = DataLoader(mdl.data_device, dataset, shuffle=shuffle)
+    if opt.end_frame == -1:
+        opt.end_frame = dataloader.time_info.num_frames - 1
+    gaussfluids = Gaussfluids(mdl.sh_degree, base_time=dataloader.time_info.get_time(opt.end_frame),
+                              hidden_sizes=mdl.hidden_sizes, track_channel=mdl.track_channel)
+    return dataset, dataloader, gaussfluids
 
 
 if __name__ == "__main__":
