@@ -116,6 +116,9 @@ class ShootModel(nn.Module):
 
                 # 如果需要将其转换为布尔掩码 (True/False)
                 self.seg_mask = torch.from_numpy(cv2.resize(binary_mask, resolution) > 0).cuda()
+            elif loaded_mask is not None:
+                # 如果加载了透明度掩码，则将其转换为布尔掩码 (True/False)
+                self.seg_mask = (loaded_mask[0, ...] > 0).cuda()
 
             self._image = gt_image.clamp(0.0, 1.0)
             self._image_width = self._image.shape[2]
