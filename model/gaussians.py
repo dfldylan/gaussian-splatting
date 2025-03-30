@@ -320,7 +320,8 @@ class Gaussians:
     def split_ellipsoids(self, target_radius=None, max_num=200000, N=2):
         selected_pts_mask, d, add_num = self.build_split_ellipsoids_data(target_radius, max_num, N)
         logging.info("Add {} points, {} points left".format(add_num, self.get_num + add_num))
-
+        if d is None:
+            return
         self.densification_postfix(d)
 
         # 删除原始需要分裂的椭球（示例）
