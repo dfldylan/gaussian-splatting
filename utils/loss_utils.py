@@ -19,7 +19,7 @@ from utils.density import compute_density
 def l1_loss(network_output, gt, mask=None):
     if mask is not None and mask.sum() > 0:
         loss = torch.abs(network_output - gt) * mask
-        return loss.sum() / mask.sum()
+        return loss.mean(0).sum() / mask.sum()
     return torch.abs(network_output - gt).mean()
 
 def l2_loss(network_output, gt):
