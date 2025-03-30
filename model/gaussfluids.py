@@ -98,7 +98,7 @@ class Gaussfluids(Gaussians):
             torch.concat((self.feats, self._embedder(torch.full(self.feats[:, :1].size(), dt_time, device='cuda'))),
                          dim=-1))
         dt_xyz, dt_scaling, dt_rotation = torch.split(dt_time * output, [3, 3, 4], dim=-1)
-        return Gaussians(self.xyz + dt_xyz, self.scaling, self.rotation,
+        return Gaussians(self.xyz + dt_xyz, self.scaling, self.rotation + dt_rotation,
                          self.opacity, self.features_dc, self.features_rest,
                          self.active_sh_degree, self.max_sh_degree, self.channel,
                          self.opacity_activation_type, self.scaling_activation_type,
@@ -112,7 +112,7 @@ class Gaussfluids(Gaussians):
                          self.is_shared_feature, self.is_shared_opacity)
 
     def move(self, dt_xyz, dt_scaling, dt_rotation) -> Gaussians:
-        return Gaussians(self.xyz + dt_xyz, self.scaling, self.rotation,
+        return Gaussians(self.xyz + dt_xyz, self.scaling, self.rotation + dt_rotation,
                          self.opacity, self.features_dc, self.features_rest,
                          self.active_sh_degree, self.max_sh_degree, self.channel,
                          self.opacity_activation_type, self.scaling_activation_type,
