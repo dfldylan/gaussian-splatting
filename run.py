@@ -3,6 +3,7 @@ from dataclasses import dataclass, field
 
 import torch
 from argparse_dataclass import ArgumentParser
+from torch.utils.tensorboard import SummaryWriter
 
 from dataset import DatasetType, detect_dataset_type
 from pipeline import scalarflow, colmap, neurofluid
@@ -37,23 +38,23 @@ if __name__ == "__main__":
     network_gui.init(args.ip, args.port)
     torch.autograd.set_detect_anomaly(mode=False)
     logging_setup()
-
-    if dataset_type == DatasetType.ScalarFlow:
-        mp, _ = ArgumentParser(scalarflow.ModelParams, allow_abbrev=False).parse_known_args()
-        pp, _ = ArgumentParser(scalarflow.PipelineParams, allow_abbrev=False).parse_known_args()
-        op, _ = ArgumentParser(scalarflow.OptimizationParams, allow_abbrev=False).parse_known_args()
-        scalarflow.training(source_path, model_path, mp, op, pp, args.start_checkpoint)
-    elif dataset_type == DatasetType.ColmapScene:
-        mp, _ = ArgumentParser(colmap.ModelParams, allow_abbrev=False).parse_known_args()
-        pp, _ = ArgumentParser(colmap.PipelineParams, allow_abbrev=False).parse_known_args()
-        op, _ = ArgumentParser(colmap.OptimizationParams, allow_abbrev=False).parse_known_args()
-        colmap.training(source_path, model_path, mp, op, pp, args.start_checkpoint)
-    elif dataset_type == DatasetType.Neurofluid:
-        mp, _ = ArgumentParser(neurofluid.ModelParams, allow_abbrev=False).parse_known_args()
-        pp, _ = ArgumentParser(neurofluid.PipelineParams, allow_abbrev=False).parse_known_args()
-        op, _ = ArgumentParser(neurofluid.OptimizationParams, allow_abbrev=False).parse_known_args()
-        neurofluid.training(source_path, model_path, mp, op, pp, args.start_checkpoint)
-    else:
-        raise ValueError(f"Unsupported dataset type: {dataset_type}")
+    with SummaryWriter(log_dir=os.path.join(model_path, "logs")) as writer:
+        if dataset_type == DatasetType.ScalarFlow:
+            mp, _ = ArgumentParser(scalarflow.ModelParams, allow_abbrev=False).parse_known_args()
+            pp, _ = ArgumentParser(scalarflow.PipelineParams, allow_abbrev=False).parse_known_args()
+            op, _ = ArgumentParser(scalarflow.OptimizationParams, allow_abbrev=False).parse_known_args()
+            scalarflow.training(source_path, model_path, mp, op, pp, args.start_checkpoint)
+        elif dataset_type == DatasetType.ColmapScene:
+            mp, _ = ArgumentParser(colmap.ModelParams, allow_abbrev=False).parse_known_args()
+            pp, _ = ArgumentParser(colmap.PipelineParams, allow_abbrev=False).parse_known_args()
+            op, _ = ArgumentParser(colmap.OptimizationParams, allow_abbrev=False).parse_known_args()
+            colmap.training(source_path, model_path, mp, op, pp, args.start_checkpoint)
+        elif dataset_type == DatasetType.Neurofluid:
+            mp, _ = ArgumentParser(neurofluid.ModelParams, allow_abbrev=False).parse_known_args()
+            pp, _ = ArgumentParser(neurofluid.PipelineParams, allow_abbrev=False).parse_known_args()
+            op, _ = ArgumentParser(neurofluid.OptimizationParams, allow_abbrev=False).parse_known_args()
+            neurofluid.training(source_path, model_path, mp, op, pp, writer, args.start_checkpoint)
+        else:
+            raise ValueError(f"Unsupported dataset type: {dataset_type}")
 
     print("\nTraining complete.")

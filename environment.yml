@@ -25,3 +25,4 @@ dependencies:
     - jupyterlab
     - matplotlib
     - argparse_dataclass
+    - markdown==3.3.4

@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from random import choice
 
 import torch
+from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 
 import arguments
@@ -24,7 +25,8 @@ class OptimizationParams(arguments.OptimizationParams):
     max_screen_size = 1000
 
 
-def training(source_path, model_path, mdl: ModelParams, opt: OptimizationParams, pipe: PipelineParams, checkpoint=None):
+def training(source_path, model_path, mdl: ModelParams, opt: OptimizationParams, pipe: PipelineParams,
+             tb_writer: SummaryWriter, checkpoint=None):
     first_iter = 0
     dump_cfg(mdl, model_path)
 
