@@ -1,3 +1,4 @@
+import logging
 import os
 from dataclasses import dataclass
 from random import choice
@@ -14,8 +15,9 @@ from dataset.readers import readNeurofluidInfo
 from model.gaussfluids import Gaussfluids
 from renderer import render, network_gui
 from renderer.network_tools import handle_network
-from utils.general_utils import safe_state
-from utils.loss_utils import l1_loss, ssim, density_loss, aniso_loss, vol_loss, opacity_loss, feature_loss
+from utils.density import get_density_info
+from utils.general_utils import safe_state, get_factor
+from utils.loss_utils import l1_loss, ssim, aniso_loss, vol_loss, consistency_loss
 from utils.system_utils import dump_cfg
 from utils.time_utils import TimeSeriesInfo
 
@@ -80,17 +82,36 @@ def training(source_path, model_path, mdl: ModelParams, opt: OptimizationParams,
 
         # --------  Loss
         gt_image = shoot.image.cuda()
-        Ll1 = l1_loss(image, gt_image, mask=shoot.seg_mask)
+        l_l1 = l1_loss(image, gt_image, mask=shoot.seg_mask)
         l_bg = l1_loss(image, bg[:, None, None] * torch.ones_like(image), mask=~shoot.seg_mask)
-        loss = 0.6 * Ll1 + 0.2 * l_bg + 0.2 * (1.0 - ssim(image, gt_image))
+        l_dssim = (1.0 - ssim(image, gt_image))
+        tb_writer.add_scalars("Loss", global_step=iteration,
+                              tag_scalar_dict={"vis/l1": l_l1.item(), "vis/bg": l_bg.item(),
+                                               "vis/dssim": l_dssim.item(), })
+        loss = 0.6 * l_l1 + 0.2 * l_bg + 0.2 * l_dssim
         if iteration <= opt.dynamics_iterations:
-            loss = loss + opt.lambda_feats * feature_loss(gaussfluids.features_dc.squeeze(1))
+            l_sh = consistency_loss(gaussfluids.features_dc.squeeze(1))
+            tb_writer.add_scalars("Loss", global_step=iteration, tag_scalar_dict={"cst/sh": l_sh.item()})
+            loss = 0.9 * loss + 0.1 * l_sh
         else:
-            loss = loss + opt.lambda_dens * density_loss(gaussians.get_xyz)
-            loss = loss + opt.lambda_aniso * aniso_loss(gaussians.get_scaling)
-            loss = loss + opt.lambda_vol * vol_loss(gaussians.get_scaling)
-            loss = loss + opt.lambda_opacity * opacity_loss(gaussfluids.get_opacity)
-            loss = loss + opt.lambda_feats * feature_loss(gaussfluids.features_dc.squeeze(1), l=2)
+            dens, dens_mean, dens_std, dens_min, dens_max, dens_median = get_density_info(gaussians.get_xyz)
+            l_density = consistency_loss(dens, target=dens_mean[None, ...], l=-2)
+            l_aniso = aniso_loss(gaussfluids.get_scaling)
+            l_vol = vol_loss(gaussfluids.get_scaling)
+            l_opacity = consistency_loss(gaussfluids.get_opacity)
+            l_sh = consistency_loss(gaussfluids.features_dc.squeeze(1), l=2)
+            tb_writer.add_scalars("Loss", global_step=iteration,
+                                  tag_scalar_dict={"phy/density": l_density.item(), "geo/aniso": l_aniso.item(),
+                                                   "geo/vol": l_vol.item(), "cst/opacity": l_opacity.item(),
+                                                   "cst/sh": l_sh.item()})
+            tb_writer.add_scalars("Density", global_step=iteration,
+                                  tag_scalar_dict={"mean": dens_mean.item(), "std": dens_std.item(),
+                                                   "min": dens_min.item(), "max": dens_max.item(),
+                                                   "median": dens_median.item()})
+            factor = get_factor(min=0.9, max=0.2, left=opt.dynamics_iterations, right=opt.iterations, select=iteration)
+            loss = factor * loss + (1 - factor) * (l_density + l_aniso + l_vol + l_opacity + l_sh)
+
+        tb_writer.add_scalars("Loss", global_step=iteration, tag_scalar_dict={"loss": loss.item()})
 
         # --------  Backward
         loss.backward()
@@ -150,7 +171,7 @@ def training(source_path, model_path, mdl: ModelParams, opt: OptimizationParams,
 
             # --------  Saving
             if iteration % 1000 == 0:
-                print("\n[ITER {}] Saving Checkpoint".format(iteration))
+                logging.info("[ITER {}] Saving Checkpoint".format(iteration))
                 torch.save((gaussfluids.save(), iteration, gaussfluids.optimizer.state_dict()),
                            model_path + "/chkpnt" + str(iteration) + ".pth")
 

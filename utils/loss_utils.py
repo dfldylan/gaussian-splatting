@@ -73,7 +73,7 @@ def _ssim(img1, img2, window, window_size, channel, size_average=True):
 
 
 def aniso_loss(scaling: torch.Tensor):
-    scaling = scaling + 1e-5
+    scaling = torch.clip(scaling, min=1e-5)
     mean = torch.pow(torch.prod(scaling, dim=1, keepdim=True), 1 / 3)
     loss = (scaling / mean - 1).square().mean()
     return loss
@@ -87,7 +87,7 @@ def vol_loss(scaling: torch.Tensor):
 
 
 def density_loss(xyz, h=0.3, k=64):
-    density = compute_density(xyz, h, k)
+    density: torch.Tensor = compute_density(xyz, h, k)
     loss = (density / density.mean() - 1).square().mean()
     return loss
 
@@ -97,13 +97,17 @@ def opacity_loss(opacity):
     return loss
 
 
-def feature_loss(features, mean=None, l=1):
-    if mean is None:
-        mean = features.mean(0, keepdim=True)
+def consistency_loss(vector, target=None, l=1):
+    if target is None:  # if target is None, use the mean of the vector
+        target = vector.mean(0, keepdim=True)
     if l == 1:
-        loss = (features - mean).abs().mean()
+        loss = (vector - target).abs().mean()
     elif l == 2:
-        loss = (features - mean).square().mean()
+        loss = (vector - target).square().mean()
+    elif l == -2:
+        loss = (vector / target - 1).square().mean()
+    elif l == -1:
+        loss = (vector / target - 1).abs().mean()
     else:
         raise Exception(f'error l: {l}')
     return loss

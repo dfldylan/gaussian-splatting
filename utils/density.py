@@ -20,6 +20,15 @@ def compute_density(positions, h=0.3, k=64):
     dens = dens + poly6_kernel(torch.zeros_like(positions[0, 0]), h)
     return dens
 
+# 计算密度，并获取密度向量的描述
+def get_density_info(positions, h=0.3, k=64):
+    dens = compute_density(positions, h, k)
+    mean = torch.mean(dens)
+    std = torch.std(dens)
+    min_dens = torch.min(dens)
+    max_dens = torch.max(dens)
+    median = torch.median(dens)
+    return dens, mean, std, min_dens, max_dens, median
 
 if __name__ == '__main__':
     # 启用CUDA

@@ -10,13 +10,13 @@
 #
 
 from random import choice
+
 from tqdm import tqdm
 
 from arguments.__init__ import ModelParams, OptimizationParams
 from dataset.cameras import ShootModel
 from renderer import render
-from utils.loss_utils import l1_loss, ssim, density_loss, feature_loss, \
-    position_loss
+from utils.loss_utils import l1_loss, ssim, density_loss, consistency_loss, position_loss
 from utils.sh_utils import RGB2SH, rgb_str_to_tensor
 from utils.system_utils import dump_cfg
 
@@ -119,15 +119,15 @@ def training(mdl: ModelParams, opt: OptimizationParams, pipe, checkpoint, fluid_
         loss = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * (1.0 - ssim(image, gt_image))
         if iteration > opt.bg_iterations:
             if iteration <= opt.bg_iterations + opt.warm_iterations:
-                loss = (loss + opt.lambda_feats * feature_loss(gaussians.features_dc.squeeze(1),
-                                                               mean=RGB2SH(rgb_str_to_tensor(init_color))))
+                loss = (loss + opt.lambda_feats * consistency_loss(gaussians.features_dc.squeeze(1),
+                                                                   target=RGB2SH(rgb_str_to_tensor(init_color))))
             elif iteration <= opt.dynamics_iterations:
-                loss = (loss + opt.lambda_feats * feature_loss(gaussians.features_dc.squeeze(1),
-                                                               mean=RGB2SH(rgb_str_to_tensor(init_color))))
+                loss = (loss + opt.lambda_feats * consistency_loss(gaussians.features_dc.squeeze(1),
+                                                                   target=RGB2SH(rgb_str_to_tensor(init_color))))
                 loss = loss + 0.01 * position_loss(gaussians.get_xyz)
             else:
-                loss = (loss + opt.lambda_feats * feature_loss(gaussians.features_dc.squeeze(1),
-                                                               mean=RGB2SH(rgb_str_to_tensor(init_color)), l=2))
+                loss = (loss + opt.lambda_feats * consistency_loss(gaussians.features_dc.squeeze(1),
+                                                                   target=RGB2SH(rgb_str_to_tensor(init_color)), l=2))
                 # loss = loss + opt.lambda_opacity * opacity_loss(gaussians.get_opacity)
                 # loss = loss + opt.lambda_aniso * aniso_loss(gaussian_frame_dynamics.get_scaling)
                 # loss = loss + 0.5 * opt.lambda_vol * vol_loss(gaussian_frame_dynamics.get_scaling)

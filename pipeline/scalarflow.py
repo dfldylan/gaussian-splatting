@@ -20,7 +20,7 @@ from model.gaussfluids import Gaussfluids
 from renderer import render
 from renderer.network_tools import handle_network
 from utils.general_utils import handle_factor
-from utils.loss_utils import l1_loss, ssim, density_loss, aniso_loss, vol_loss, opacity_loss, feature_loss
+from utils.loss_utils import l1_loss, ssim, density_loss, aniso_loss, vol_loss, opacity_loss, consistency_loss
 from utils.math import ActivationType
 from utils.sh_utils import rgb_str_to_sh_tensor
 from utils.system_utils import dump_cfg
@@ -97,13 +97,13 @@ def training(source_path, model_path, mdl: ModelParams, opt: OptimizationParams,
         Ll1 = l1_loss(image, gt_image)
         loss = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * (1.0 - ssim(image, gt_image))
         if iteration <= opt.dynamics_iterations:
-            loss = loss + opt.lambda_feats * feature_loss(gaussfluids.features_dc.squeeze(1))
+            loss = loss + opt.lambda_feats * consistency_loss(gaussfluids.features_dc.squeeze(1))
         else:
             loss = loss + opt.lambda_dens * density_loss(gaussians.get_xyz)
             loss = loss + opt.lambda_aniso * aniso_loss(gaussians.get_scaling)
             loss = loss + opt.lambda_vol * vol_loss(gaussians.get_scaling)
             loss = loss + opt.lambda_opacity * opacity_loss(gaussfluids.get_opacity)
-            loss = loss + opt.lambda_feats * feature_loss(gaussfluids.features_dc.squeeze(1), l=2)
+            loss = loss + opt.lambda_feats * consistency_loss(gaussfluids.features_dc.squeeze(1), l=2)
         loss.backward()
 
         with torch.no_grad():

@@ -108,3 +108,31 @@ def handle_factor(factor, value: torch.Tensor) -> torch.Tensor:
         # Treat as an absolute value.
         absolute_value = float(factor) * torch.ones_like(value)
         return absolute_value
+
+
+def get_factor(min, max, left, right, select):
+    """
+    返回一个基于当前迭代值的平滑变化因子。
+
+    参数:
+        min (float): 最小因子值
+        max (float): 最大因子值
+        left (int): 开始过渡的迭代次数
+        right (int): 结束过渡的迭代次数
+        select (int): 当前迭代次数
+
+    返回:
+        float: 当前迭代次数对应的因子值
+    """
+    if select <= left:
+        return min
+    if select >= right:
+        return max
+
+    # 计算当前进度(0到1之间)
+    progress = (select - left) / (right - left)
+
+    # 线性插值计算因子值
+    factor = min + progress * (max - min)
+
+    return factor
