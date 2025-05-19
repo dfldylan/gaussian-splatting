@@ -28,7 +28,7 @@ class ViewerOptions:
 
 
 from dataset import DatasetType, detect_dataset_type
-from pipeline import scalarflow, colmap
+from pipeline import scalarflow, colmap, neurofluid
 
 if __name__ == "__main__":
     # Set up command line argument parser
@@ -54,6 +54,11 @@ if __name__ == "__main__":
         pp, _ = ArgumentParser(colmap.PipelineParams, allow_abbrev=False).parse_known_args()
         op, _ = ArgumentParser(colmap.OptimizationParams, allow_abbrev=False).parse_known_args()
         colmap.network_viewer(source_path, mp, op, pp, args.start_checkpoint)
+    elif dataset_type == DatasetType.Neurofluid:
+        mp, _ = ArgumentParser(neurofluid.ModelParams, allow_abbrev=False).parse_known_args()
+        pp, _ = ArgumentParser(neurofluid.PipelineParams, allow_abbrev=False).parse_known_args()
+        op, _ = ArgumentParser(neurofluid.OptimizationParams, allow_abbrev=False).parse_known_args()
+        neurofluid.network_viewer(source_path, mp, op, pp, args.start_checkpoint)
+
     else:
         raise ValueError(f"Unsupported dataset type: {dataset_type}")
-

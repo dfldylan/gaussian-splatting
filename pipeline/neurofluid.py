@@ -1,8 +1,10 @@
+import json
 import logging
 import os
 from dataclasses import dataclass
 from random import choice
 
+import numpy as np
 import torch
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
@@ -20,6 +22,7 @@ from utils.general_utils import safe_state, get_factor
 from utils.loss_utils import l1_loss, ssim, aniso_loss, vol_loss, consistency_loss
 from utils.system_utils import dump_cfg
 from utils.time_utils import TimeSeriesInfo
+from utils.to_splishsplash import write_bgeo_from_numpy
 
 
 @dataclass
@@ -224,36 +227,36 @@ def render_set(pp: PipelineParams, frame_index, shoot: ShootModel, background, r
         torchvision.utils.save_image(gt, os.path.join(gts_path, '{0:04d}'.format(frame_index) + ".png"))
 
 
-def export_npz(source_path, output_path, mdl: ModelParams, opt: OptimizationParams, pipe: PipelineParams, checkpoint,
-               time_info: TimeSeriesInfo = None, ply=True):
+def export(source_path, output_path, mdl: ModelParams, opt: OptimizationParams, pipe: PipelineParams, checkpoint,
+           time_info: TimeSeriesInfo = None, ply=False, bgeo=False):
     with torch.no_grad():
-        dataset = readNeurofluidInfo(source_path, eval=False, timestep_scaling=pipe.time_scaling)
-        dataloader = DataLoader(mdl.data_device, dataset, shuffle=False, is_nerf_synthetic=True)
-        if opt.end_frame == -1:
-            opt.end_frame = dataloader.time_info.num_frames - 1
-        gaussfluids = Gaussfluids(mdl.sh_degree, base_time=dataloader.time_info.get_time(opt.end_frame),
-                                  hidden_sizes=mdl.hidden_sizes, track_channel=mdl.track_channel)
-        (model_params, first_iter) = torch.load(checkpoint)
+        dataset, dataloader, gaussfluids = build_dataloader(source_path, mdl, opt, pipe, shuffle=False)
+        (model_params, first_iter, _) = torch.load(checkpoint)
         gaussfluids.restore(model_params)
 
         time_info = dataloader.time_info if time_info is None else time_info
 
-        bg_color = [1, 1, 1] if mdl.white_background else [0, 0, 0]
-        background = torch.tensor(bg_color, dtype=torch.float32, device="cuda")
-
         save_path = os.path.join(output_path, 'npz')
         os.makedirs(save_path, exist_ok=True)
+        if bgeo == True:
+            last_pos = None
 
         json.dump(time_info._asdict(), open(os.path.join(save_path, 'time_info.json'), 'w'))
 
         for i in range(opt.start_frame, opt.end_frame + 1):
-            handle_network(pipe, gaussfluids, time_info, background, (i == opt.end_frame),
-                           source_path, opt.start_frame, opt.end_frame, opt.min_opacity)
             time = time_info.start_time + i * time_info.time_step
             logging.info('Frame {}, Time {}'.format(i, time))
             gaussians = gaussfluids.get_static(time)
             gaussians.save_ply(os.path.join(save_path, 'ply', '{:04}.ply'.format(i))) if ply else None
-            np.savez(os.path.join(save_path, '{:04}.npz'.format(i)), pos=gaussians.get_xyz.cpu().detach().numpy())
+            pos = gaussians.get_xyz.cpu().detach().numpy()
+            np.savez(os.path.join(save_path, '{:04}.npz'.format(i)), pos=pos)
+            if bgeo == True:
+                if last_pos is not None:
+                    vel = (pos - last_pos) / time_info.time_step
+                else:
+                    vel = np.zeros_like(pos)
+                last_pos = pos
+                write_bgeo_from_numpy(os.path.join(save_path, 'bgeo', '{:04}.bgeo'.format(i)), pos, vel)
 
 
 # def filter_gaussian(gaussian_frame: GaussfluidsModel):
@@ -261,6 +264,21 @@ def export_npz(source_path, output_path, mdl: ModelParams, opt: OptimizationPara
 #     mask = gaussian_frame.get_opacity.cpu().numpy() < 0.1
 #     xyz_filtered = xyz[mask[:, 0]]
 #     return xyz_filtered
+
+def network_viewer(source_path, mdl: ModelParams, opt: OptimizationParams, pipe: PipelineParams, checkpoint,
+                   gaussians_bg=None):
+    with torch.no_grad():
+        dataset, dataloader, gaussfluids = build_dataloader(source_path, mdl, opt, pipe, shuffle=False)
+        (model_params, first_iter, _) = torch.load(checkpoint)
+        gaussfluids.restore(model_params)
+
+    time_info: TimeSeriesInfo = dataloader.time_info
+    bg_color = [1, 1, 1] if mdl.white_background else [0, 0, 0]
+    background = torch.tensor(bg_color, dtype=torch.float32, device="cuda")
+
+    handle_network(pipe, gaussfluids, time_info, background, True, source_path, opt.start_frame,
+                   opt.end_frame, opt.min_opacity, gaussians_bg)
+
 
 def build_dataloader(source_path, mdl: ModelParams, opt: OptimizationParams, pipe: PipelineParams, shuffle=True):
     dataset: DatasetInfo = readNeurofluidInfo(source_path, eval=False)

@@ -14,6 +14,8 @@ from dataclasses import dataclass, field
 
 from argparse_dataclass import ArgumentParser
 
+from dataset import DatasetType, detect_dataset_type
+from pipeline import scalarflow, colmap, neurofluid
 from utils.general_utils import safe_state, logging_setup
 
 
@@ -23,10 +25,9 @@ class ExportOptions:
     model_path: str = field(default="", metadata={"args": ["-m"], "help": "Model path", "dest": "model_path"})
     start_checkpoint: str = field(default=None,
                                   metadata={"help": "Path to the start checkpoint", "dest": "start_checkpoint"})
+    ply: bool = field(default=False, metadata={"help": "export ply files", "dest": "ply"})
+    bgeo: bool = field(default=False, metadata={"help": "export bgeo files", "dest": "bgeo"})
 
-
-from dataset import DatasetType, detect_dataset_type
-from pipeline import scalarflow, colmap
 
 if __name__ == "__main__":
     # Set up command line argument parser
@@ -54,6 +55,12 @@ if __name__ == "__main__":
         pp, _ = ArgumentParser(colmap.PipelineParams, allow_abbrev=False).parse_known_args()
         op, _ = ArgumentParser(colmap.OptimizationParams, allow_abbrev=False).parse_known_args()
         colmap.export_npz(source_path, os.path.join(model_path, "output"), mp, op, pp, args.start_checkpoint)
+    elif dataset_type == DatasetType.Neurofluid:
+        mp, _ = ArgumentParser(neurofluid.ModelParams, allow_abbrev=False).parse_known_args()
+        pp, _ = ArgumentParser(neurofluid.PipelineParams, allow_abbrev=False).parse_known_args()
+        op, _ = ArgumentParser(neurofluid.OptimizationParams, allow_abbrev=False).parse_known_args()
+        neurofluid.export(source_path, os.path.join(model_path, "output"), mp, op, pp, args.start_checkpoint,
+                          ply=args.ply, bgeo=args.bgeo)
     else:
         raise ValueError(f"Unsupported dataset type: {dataset_type}")
 
