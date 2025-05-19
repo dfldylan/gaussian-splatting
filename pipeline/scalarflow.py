@@ -21,7 +21,7 @@ from renderer import render
 from renderer.network_tools import handle_network
 from utils.general_utils import handle_factor
 from utils.loss_utils import l1_loss, ssim, density_loss, aniso_loss, vol_loss, opacity_loss, consistency_loss
-from utils.math import ActivationType
+from utils.math_utils import ActivationType
 from utils.sh_utils import rgb_str_to_sh_tensor
 from utils.system_utils import dump_cfg
 from utils.time_utils import TimeSeriesInfo

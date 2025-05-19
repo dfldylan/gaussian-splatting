@@ -4,7 +4,7 @@ from torch import nn
 from model.gaussians import Gaussians
 from model.mlp import MLP
 from utils.graphics_utils import BasicPointCloud
-from utils.math import ActivationType
+from utils.math_utils import ActivationType
 from utils.position_encoding import Embedder
 
 

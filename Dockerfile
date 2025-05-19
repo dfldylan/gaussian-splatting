@@ -3,7 +3,7 @@ LABEL maintainer="dfldylan@qq.com"
 ENV TZ Asia/Shanghai
 #ENV http_proxy=http://router4.ustb-ai3d.cn:3128
 #ENV https_proxy=http://router4.ustb-ai3d.cn:3128
-RUN apt-get update && apt-get install -y wget git vim openssh-server net-tools libgl-dev libglm-dev
+RUN apt-get update && apt-get install -y wget git vim openssh-server net-tools libgl-dev libglm-dev freeglut3-dev
 RUN wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh -O /miniconda.sh \
     && bash /miniconda.sh -b -p /miniconda \
     && rm /miniconda.sh
