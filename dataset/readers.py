@@ -10,14 +10,16 @@
 #
 import json
 import os
+import pathlib
 import sys
-from typing import List
+from typing import List, Optional
 
 import numpy as np
 
 from dataset import DatasetInfo, ShootInfo
 from dataset.colmap import read_extrinsics_text, read_intrinsics_text, read_extrinsics_binary, \
     read_intrinsics_binary, read_points3D_binary, read_points3D_text, TimedImage, readColmapCameras
+from dataset.nerfies import  readHypernerfCameras
 from dataset.tools import fetchPly, storePly, handle_time, getNerfppNorm, readCamerasFromTransforms, gen_random_points, \
     readCamerasFromScalarFlow, loadPly
 from utils.sh_utils import SH2RGB
@@ -172,6 +174,59 @@ def readColmapSceneInfo(path, depths, seg, images=None, time_step=1 / 30, timest
     if timestep_x != 1:
         time_info = TimeSeriesInfo(time_info.start_time, time_info.time_step * timestep_x,
                                    time_info.num_frames // timestep_x)
+    scene_info = DatasetInfo(point_cloud=pcd,
+                             train_cameras=train_cam_infos,
+                             test_cameras=test_cam_infos,
+                             nerf_normalization=nerf_normalization,
+                             time_info=time_info,
+                             )
+    return scene_info
+
+
+def readHypernerfInfo(path, depths, seg, image_scale: float = 1.0, timestep_scaling=1):
+    import nerfies
+
+    scene_center, scene_scale, near, far = nerfies.load_scene_info(path)
+    metadata_path = pathlib.Path(path) / 'metadata.json'
+    metadata_dict = json.load(metadata_path.open('r'))
+
+    depth_params_file = os.path.join(path, "sparse/0", "depth_params.json")
+    ## if depth_params_file isnt there AND depths file is here -> throw error
+    depths_params = None
+    if depths != "":
+        try:
+            with open(depth_params_file, "r") as f:
+                depths_params = json.load(f)
+            all_scales = np.array([depths_params[key]["scale"] for key in depths_params])
+            if (all_scales > 0).sum():
+                med_scale = np.median(all_scales[all_scales > 0])
+            else:
+                med_scale = 0
+            for key in depths_params:
+                depths_params[key]["med_scale"] = med_scale
+
+        except FileNotFoundError:
+            print(f"Error: depth_params.json file not found at path '{depth_params_file}'.")
+            sys.exit(1)
+        except Exception as e:
+            print(f"An unexpected error occurred when trying to open depth_params.json file: {e}")
+            sys.exit(1)
+
+    train_ids, val_ids = nerfies._load_dataset_ids(path)
+    train_cam_infos = readHypernerfCameras(train_ids, metadata_dict, path, scene_center, scene_scale, image_scale,
+                                           depths_params, depths, seg)
+    test_cam_infos =  readHypernerfCameras(val_ids, metadata_dict, path, scene_center, scene_scale, image_scale,
+                                           depths_params, depths, seg) if len(val_ids) > 0 else []
+
+
+    ply_path = os.path.join(path, "points3d.ply")
+    pcd = fetchPly(ply_path)
+
+    nerf_normalization = getNerfppNorm(train_cam_infos)
+    time_info: TimeSeriesInfo = handle_time(train_cam_infos + test_cam_infos)
+    if abs(timestep_scaling - 1) > 1e-5:
+        time_info = TimeSeriesInfo(time_info.start_time, time_info.time_step * timestep_scaling,
+                                   int((time_info.num_frames - 1) / timestep_scaling) + 1)
     scene_info = DatasetInfo(point_cloud=pcd,
                              train_cameras=train_cam_infos,
                              test_cameras=test_cam_infos,

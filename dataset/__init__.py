@@ -23,7 +23,7 @@ class ShootInfo(NamedTuple):
     uid: int
     R: np.array  # R's transpose of w2c matrix, same to R of c2w matrix
     T: np.array  # T of w2c matrix
-    FovY: np.array
+    FovY: np.array  # FovY: radians
     FovX: np.array
     depth_params: dict
     image_path: str
@@ -41,6 +41,7 @@ class DatasetType(IntEnum):
     Neurofluid = 2
     FixedColmap = 3
     ScalarFlow = 4
+    HyperNerf = 5
 
 
 def detect_dataset_type(path):
@@ -56,6 +57,8 @@ def detect_dataset_type(path):
         return DatasetType.NerfSynthetic
     elif os.path.exists(os.path.join(path, "box.pt")):
         return DatasetType.Neurofluid
+    elif os.path.exists(os.path.join(path, "points.npy")):
+        return DatasetType.HyperNerf
     else:
         raise ValueError("Could not recognize scene type!")
 

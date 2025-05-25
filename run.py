@@ -6,7 +6,7 @@ from argparse_dataclass import ArgumentParser
 from torch.utils.tensorboard import SummaryWriter
 
 from dataset import DatasetType, detect_dataset_type
-from pipeline import scalarflow, colmap, neurofluid
+from pipeline import scalarflow, colmap, neurofluid, hypernerf
 from renderer import network_gui
 from utils.general_utils import safe_state, logging_setup
 
@@ -54,6 +54,11 @@ if __name__ == "__main__":
             pp, _ = ArgumentParser(neurofluid.PipelineParams, allow_abbrev=False).parse_known_args()
             op, _ = ArgumentParser(neurofluid.OptimizationParams, allow_abbrev=False).parse_known_args()
             neurofluid.training(source_path, model_path, mp, op, pp, writer, args.start_checkpoint)
+        elif dataset_type == DatasetType.HyperNerf:
+            mp, _ = ArgumentParser(hypernerf.ModelParams, allow_abbrev=False).parse_known_args()
+            pp, _ = ArgumentParser(hypernerf.PipelineParams, allow_abbrev=False).parse_known_args()
+            op, _ = ArgumentParser(hypernerf.OptimizationParams, allow_abbrev=False).parse_known_args()
+            hypernerf.training(source_path, model_path, mp, op, pp, writer, args.start_checkpoint)
         else:
             raise ValueError(f"Unsupported dataset type: {dataset_type}")
 
