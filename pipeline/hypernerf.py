@@ -47,8 +47,8 @@ class OptimizationParams(arguments.OptimizationParams):
 
 
 def training_initialize(iterations, dataloader: DataLoader, opt: OptimizationParams,
-                        pipe: PipelineParams) -> Gaussians:
-    gaussians = Gaussians(max_sh_degree=1)
+                        pipe: PipelineParams) -> (Gaussians, Gaussians):
+    gaussians = Gaussians(max_sh_degree=1)  # todo check sh_degree == 1
     gaussians.create_from_pcd(dataloader.point_cloud)
     gaussians.setup(opt, dataloader.cameras_extent, position_lr_max_steps=iterations)
     bg = torch.tensor([1, 1, 1], dtype=torch.float32, device="cuda")
