@@ -15,9 +15,9 @@ import torch
 from PIL import Image
 from torch import nn
 
-from dataset import ShootInfo
-from utils.general_utils import PILtoTorch
-from utils.graphics_utils import getWorld2View2, getProjectionMatrix
+from . import ShootInfo
+from ..utils.general_utils import PILtoTorch
+from ..utils.graphics_utils import getWorld2View2, getProjectionMatrix
 
 
 class ShootModel(nn.Module):

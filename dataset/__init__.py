@@ -60,8 +60,8 @@ def detect_dataset_type(path):
         raise ValueError("Could not recognize scene type!")
 
 
-from utils.graphics_utils import BasicPointCloud
-from utils.time_utils import TimeSeriesInfo
+from ..utils.graphics_utils import BasicPointCloud
+from ..utils.time_utils import TimeSeriesInfo
 
 
 class DatasetInfo(NamedTuple):
@@ -73,7 +73,7 @@ class DatasetInfo(NamedTuple):
     extra: dict = {}
 
 
-from dataset.cameras import ShootModel, cameraList_from_camInfos
+from .cameras import ShootModel, cameraList_from_camInfos
 
 
 class DataLoader:

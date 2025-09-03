@@ -19,7 +19,7 @@ from dataset.readers import readColmapSceneInfo
 from model.gaussfluids import Gaussfluids
 from model.gaussians import Gaussians
 from renderer import render
-from renderer.network_tools import handle_network
+from ..renderer.network_tools import handle_network
 from utils.general_utils import get_expon_lr_func, handle_factor
 from utils.loss_utils import l1_loss, density_loss, aniso_loss, vol_loss, opacity_loss, consistency_loss
 from utils.math_utils import ActivationType

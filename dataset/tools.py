@@ -5,10 +5,10 @@ from typing import List
 
 from plyfile import PlyData, PlyElement
 
-from dataset import ShootInfo
-from utils.graphics_utils import BasicPointCloud, getWorld2View2, focal2fov, fov2focal
-from utils.sh_utils import SH2RGB
-from utils.time_utils import TimeSeriesInfo
+from ..dataset import ShootInfo
+from ..utils.graphics_utils import BasicPointCloud, getWorld2View2, focal2fov, fov2focal
+from ..utils.sh_utils import SH2RGB
+from ..utils.time_utils import TimeSeriesInfo
 
 
 def fetchPly(path):

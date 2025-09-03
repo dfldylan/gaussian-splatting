@@ -17,7 +17,7 @@ from datetime import datetime
 import numpy as np
 import torch
 
-from utils.system_utils import is_debug_mode
+from .system_utils import is_debug_mode
 
 
 def PILtoTorch(pil_image, resolution):

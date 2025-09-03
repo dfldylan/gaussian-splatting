@@ -14,7 +14,7 @@ from argparse import Namespace
 from errno import EEXIST
 from os import makedirs, path
 
-from arguments.__init__ import ModelParams, OptimizationParams
+from ..arguments import ModelParams, OptimizationParams
 
 try:
     from torch.utils.tensorboard import SummaryWriter

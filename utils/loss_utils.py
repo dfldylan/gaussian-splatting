@@ -13,11 +13,21 @@ import torch
 import torch.nn.functional as F
 from torch.autograd import Variable
 from math import exp
-from utils.density import compute_density
+from ..utils.density import compute_density
 
 
 def l1_loss(network_output, gt, mask=None):
+    '''
+    L1 loss with optional mask
+    1. if mask is None, compute L1 loss over all pixels
+    2. if mask is not None, compute L1 loss over masked pixels only
+    :param network_output: [channel, height, width]
+    :param gt:  [channel, height, width] or [channel, 1, 1]
+    :param mask:  [1, height, width] or None
+    :return: float
+    '''
     if mask is not None and mask.sum() > 0:
+        # for each pixel, gt if mask else bg
         loss = torch.abs(network_output - gt) * mask
         return loss.mean(0).sum() / mask.sum()
     return torch.abs(network_output - gt).mean()

@@ -7,14 +7,14 @@ from plyfile import PlyData, PlyElement
 from simple_knn._C import distCUDA2
 from torch import nn
 
-from utils.general_utils import get_expon_lr_func
-from utils.graphics_utils import BasicPointCloud
-from utils.math_utils import ActivationType, inverse_sigmoid, build_rotation
-from utils.math_utils import build_covariance_from_scaling_rotation, activation_functions
-from utils.optimizer import prune_optimizer, replace_tensor_to_optimizer, cat_tensors_to_optimizer
-from utils.sh_utils import RGB2SH, rgb_str_to_tensor
-from utils.system_utils import mkdir_p
-from utils.tools import generate_random_bool_tensor, classify_mask
+from ..utils.general_utils import get_expon_lr_func
+from ..utils.graphics_utils import BasicPointCloud
+from ..utils.math_utils import ActivationType, inverse_sigmoid, build_rotation
+from ..utils.math_utils import build_covariance_from_scaling_rotation, activation_functions
+from ..utils.optimizer import prune_optimizer, replace_tensor_to_optimizer, cat_tensors_to_optimizer
+from ..utils.sh_utils import RGB2SH, rgb_str_to_tensor
+from ..utils.system_utils import mkdir_p
+from ..utils.tools import generate_random_bool_tensor, classify_mask
 
 
 class Gaussians:

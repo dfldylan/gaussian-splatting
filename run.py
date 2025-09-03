@@ -5,10 +5,10 @@ import torch
 from argparse_dataclass import ArgumentParser
 from torch.utils.tensorboard import SummaryWriter
 
-from dataset import DatasetType, detect_dataset_type
-from pipeline import scalarflow, colmap, neurofluid
-from renderer import network_gui
-from utils.general_utils import safe_state, logging_setup
+from .dataset import DatasetType, detect_dataset_type
+from .pipeline import scalarflow, colmap, neurofluid
+from .renderer import network_gui
+from .utils.general_utils import safe_state, logging_setup
 
 
 @dataclass

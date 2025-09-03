@@ -13,9 +13,9 @@ import math
 import torch
 from diff_gaussian_rasterization import GaussianRasterizationSettings, GaussianRasterizer
 
-from dataset import ShootModel
-from model.gaussians import Gaussians
-from utils.sh_utils import eval_sh
+from ..dataset import ShootModel
+from ..model.gaussians import Gaussians
+from ..utils.sh_utils import eval_sh
 
 
 def render(viewpoint_camera: ShootModel, pc: Gaussians, pipe, bg_color: torch.Tensor, scaling_modifier=1.0,
