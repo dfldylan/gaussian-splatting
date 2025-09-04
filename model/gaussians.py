@@ -81,7 +81,7 @@ class Gaussians:
         self.T_sum = torch.zeros((self.get_num, 1), device="cuda")
         self.T_count = torch.zeros((self.get_num, 1), device="cuda")
 
-    def create_from_pcd(self, pcd: BasicPointCloud, init_color=None):
+    def create_from_pcd(self, pcd: BasicPointCloud, init_color=None, opacity=0.1):
         channel = self.channel
         fused_point_cloud = torch.tensor(np.asarray(pcd.points)).float().cuda()
         if init_color is None:
@@ -99,7 +99,7 @@ class Gaussians:
         rots = torch.zeros((fused_point_cloud.shape[0], 4), device="cuda")
         rots[:, 0] = 1
 
-        opacities = inverse_sigmoid(0.1 * torch.ones((fused_point_cloud.shape[0], 1), dtype=torch.float, device="cuda"))
+        opacities = inverse_sigmoid(opacity * torch.ones((fused_point_cloud.shape[0], 1), dtype=torch.float, device="cuda"))
 
         self.xyz = nn.Parameter(fused_point_cloud.requires_grad_(True))
         self.scaling = nn.Parameter(scales.requires_grad_(True))
