@@ -276,7 +276,7 @@ class Gaussians:
         d, add_num = self.build_split_mask_data(selected_pts_mask, N)
         return selected_pts_mask, d, add_num
 
-    def build_split_ellipsoids_data(self, target_radius=None, max_num=200000, N=2):
+    def build_split_ellipsoids_data(self, target_radius, max_num=200000, N=2):
         threshold = target_radius
         selected_pts_mask = torch.any(self.get_scaling > threshold, dim=1)
         if selected_pts_mask.sum() < 1:
@@ -309,19 +309,16 @@ class Gaussians:
 
     def densify_and_split(self, grads, grad_threshold, scene_extent, N=2):
         selected_pts_mask, d, add_num = self.build_split_grad_data(grads, grad_threshold, scene_extent, N)
-        logging.info("Add {} points, {} points left".format(add_num, self.get_num + add_num))
+        self.split_with_mask(selected_pts_mask, d, add_num, N=2)
 
-        self.densification_postfix(d)
-
-        prune_filter = torch.cat(
-            (selected_pts_mask, torch.zeros(N * selected_pts_mask.sum(), device="cuda", dtype=bool)))
-        self.prune_points(prune_filter)
-
-    def split_ellipsoids(self, target_radius=None, max_num=200000, N=2):
+    def split_ellipsoids(self, target_radius, max_num=200000, N=2):
         selected_pts_mask, d, add_num = self.build_split_ellipsoids_data(target_radius, max_num, N)
-        logging.info("Add {} points, {} points left".format(add_num, self.get_num + add_num))
+        self.split_with_mask(selected_pts_mask, d, add_num, N)
+
+    def split_with_mask(self, selected_pts_mask, d, add_num, N=2):
         if d is None:
             return
+        logging.info("Add {} points, {} points left".format(add_num, self.get_num + add_num))
         self.densification_postfix(d)
 
         # 删除原始需要分裂的椭球（示例）
@@ -359,7 +356,6 @@ class Gaussians:
         self.prune_points(prune_mask)
 
         torch.cuda.empty_cache()
-
 
     @property
     def get_num(self):
@@ -510,12 +506,12 @@ class Gaussians:
         if self.active_sh_degree != gs.active_sh_degree:
             self.active_sh_degree = max(gs.active_sh_degree, self.active_sh_degree)
             logging.warning('active_sh_degree mismatch, use {}'.format(self.active_sh_degree))
-        if self.is_shared_opacity :
+        if self.is_shared_opacity:
             self.opacity = self.opacity.expand(self.get_num, -1)
             self.is_shared_opacity = False
         if self.is_shared_feature:
-            self.features_dc = self.features_dc.expand(self.get_num,-1,-1)
-            self.features_rest = self.features_rest.expand(self.get_num,-1,-1)
+            self.features_dc = self.features_dc.expand(self.get_num, -1, -1)
+            self.features_rest = self.features_rest.expand(self.get_num, -1, -1)
             self.is_shared_feature = False
         self.xyz = torch.concat((self.xyz, gs.xyz), dim=0)
         self.features_dc = torch.concat((self.features_dc, gs.features_dc), dim=0)
