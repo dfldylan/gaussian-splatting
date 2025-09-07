@@ -337,7 +337,7 @@ class Gaussians:
         else:
             mean_T = self.T_sum / self.T_count
             mean_T[mean_T.isnan()] = 0.0
-            prune_mask = torch.logical_or((self.T_count < prune_min_iters), mean_T < prune_min_T).squeeze()
+            prune_mask = torch.logical_or((self.denom < prune_min_iters), mean_T < prune_min_T).squeeze()
             self.prune_points(prune_mask)
 
         grads = self.xyz_gradient_accum / self.denom
