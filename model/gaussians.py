@@ -595,3 +595,20 @@ class Gaussians:
     def no_optimizer(self):
         self.reset_gradient_accum()
         self.optimizer = None
+
+    def prune_points_clone(self, prune_mask):
+        valid_points_mask = ~prune_mask
+
+        gaussians_copy = Gaussians(
+            self.xyz[valid_points_mask],
+            self.scaling[valid_points_mask],
+            self.rotation[valid_points_mask],
+            self.opacity[valid_points_mask],
+            self.features_dc[valid_points_mask],
+            self.features_rest[valid_points_mask],
+            self.active_sh_degree, self.max_sh_degree, self.channel,
+            self.opacity_activation_type, self.scaling_activation_type,
+            self.is_shared_feature, self.is_shared_opacity
+        )
+
+        return gaussians_copy
