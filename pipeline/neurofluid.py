@@ -43,7 +43,7 @@ def training(source_path, model_path, mdl: ModelParams, opt: OptimizationParams,
         gaussfluids.setup(opt, dataloader.cameras_extent,
                           position_lr_max_steps=opt.iterations - opt.dynamics_iterations, opt_dict=opt_dict)
     else:
-        gaussfluids.create_from_pcd(dataloader.point_cloud, init_color=pipe.dynamics_color)
+        gaussfluids.create_from_pcd(dataloader.point_cloud, color=pipe.dynamics_color)
         gaussfluids.setup(opt, dataloader.cameras_extent,
                           position_lr_max_steps=opt.iterations - opt.dynamics_iterations)
 

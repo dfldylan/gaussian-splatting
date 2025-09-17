@@ -124,7 +124,7 @@ from matplotlib import colors
 import numpy as np
 
 
-def rgb_str_to_tensor(color_str):
+def rgb_str_to_tensor(color_str: str):
     # 使用 matplotlib.colors 将字符串颜色转换为 RGB 值
     rgb = colors.to_rgb(color_str)  # 返回 (R, G, B)，范围是 0 到 1
     rgb_array = np.array(rgb) * 255  # 将 0-1 范围的 RGB 转换为 0-255 范围

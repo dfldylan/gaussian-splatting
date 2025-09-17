@@ -49,7 +49,7 @@ def training(mdl: ModelParams, opt: OptimizationParams, pipe, checkpoint, fluid_
     else:
         gs_bg.create_from_pcd(scene.point_cloud)
         gs_bg.setup(opt, scene.cameras_extent, position_lr_max_steps=opt.bg_iterations)
-        gaussians.create_from_pcd(scene.point_cloud, init_color=pipe.dynamics_color)
+        gaussians.create_from_pcd(scene.point_cloud, color=pipe.dynamics_color)
         gaussians.setup(opt, scene.cameras_extent, position_lr_max_steps=opt.iterations - opt.dynamics_iterations)
 
     bg_color = [1, 1, 1] if mdl.white_background else [0, 0, 0]
