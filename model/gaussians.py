@@ -42,12 +42,12 @@ class Gaussians:
                  ):
         self.channel = channel
 
-        self.xyz = xyz
-        self.scaling = scaling
-        self.rotation = rotation
-        self.opacity = opacity
-        self.features_dc = features_dc
-        self.features_rest = features_rest
+        self.xyz = xyz.cuda()
+        self.scaling = scaling.cuda()
+        self.rotation = rotation.cuda()
+        self.opacity = opacity.cuda()
+        self.features_dc = features_dc.cuda()
+        self.features_rest = features_rest.cuda()
 
         self.active_sh_degree = active_sh_degree
         self.max_sh_degree = max_sh_degree
@@ -98,7 +98,7 @@ class Gaussians:
         features[:, :, 0] = fused_color
         features[:, :, 1:] = 0.0
 
-        print("Number of points at initialisation : ", fused_point_cloud.shape[0])
+        # print("Number of points at initialisation : ", fused_point_cloud.shape[0])
 
         if scaling is None:
             dist2 = torch.clamp_min(distCUDA2(pos), 0.0000001)
@@ -617,6 +617,21 @@ class Gaussians:
             self.opacity[valid_points_mask],
             self.features_dc[valid_points_mask],
             self.features_rest[valid_points_mask],
+            self.active_sh_degree, self.max_sh_degree, self.channel,
+            self.opacity_activation_type, self.scaling_activation_type,
+            self.is_shared_feature, self.is_shared_opacity
+        )
+
+        return gaussians_copy
+
+    def clone(self):
+        gaussians_copy = Gaussians(
+            self.xyz.clone(),
+            self.scaling.clone(),
+            self.rotation.clone(),
+            self.opacity.clone(),
+            self.features_dc.clone(),
+            self.features_rest.clone(),
             self.active_sh_degree, self.max_sh_degree, self.channel,
             self.opacity_activation_type, self.scaling_activation_type,
             self.is_shared_feature, self.is_shared_opacity
