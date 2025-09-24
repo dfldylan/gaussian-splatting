@@ -46,6 +46,80 @@ def build_rotation(r):
     R[:, 2, 2] = 1 - 2 * (x*x + y*y)
     return R
 
+def build_qvec_from_rotation(R):
+    # R: [N,3,3] or [3,3]
+    # 输出 q: [N,4] or [4] (w,x,y,z)
+    
+    # 处理单个矩阵输入
+    is_single = R.dim() == 2
+    if is_single:
+        R = R.unsqueeze(0)
+
+    N = R.shape[0]
+    q = torch.empty((N, 4), dtype=R.dtype, device=R.device)
+
+    # 提取对角线元素
+    t = R[:, 0, 0] + R[:, 1, 1] + R[:, 2, 2]
+
+    # Case 1: trace > 0
+    mask_t_pos = t > 0
+    if torch.any(mask_t_pos):
+        R_sub = R[mask_t_pos]
+        t_sub = t[mask_t_pos]
+        
+        s = 0.5 / torch.sqrt(t_sub + 1.0)
+        w = 0.25 / s
+        x = (R_sub[:, 2, 1] - R_sub[:, 1, 2]) * s
+        y = (R_sub[:, 0, 2] - R_sub[:, 2, 0]) * s
+        z = (R_sub[:, 1, 0] - R_sub[:, 0, 1]) * s
+        q[mask_t_pos] = torch.stack([w, x, y, z], dim=1)
+
+    # Case 2, 3, 4: trace <= 0
+    mask_t_neg = ~mask_t_pos
+    if torch.any(mask_t_neg):
+        R_sub = R[mask_t_neg]
+        
+        # Case 2: R[0,0] is the largest diagonal component
+        mask_c2 = (R_sub[:, 0, 0] > R_sub[:, 1, 1]) & (R_sub[:, 0, 0] > R_sub[:, 2, 2])
+        if torch.any(mask_c2):
+            R_c2 = R_sub[mask_c2]
+            s = 2.0 * torch.sqrt(1.0 + R_c2[:, 0, 0] - R_c2[:, 1, 1] - R_c2[:, 2, 2])
+            w = (R_c2[:, 2, 1] - R_c2[:, 1, 2]) / s
+            x = 0.25 * s
+            y = (R_c2[:, 0, 1] + R_c2[:, 1, 0]) / s
+            z = (R_c2[:, 0, 2] + R_c2[:, 2, 0]) / s
+            q[mask_t_neg][mask_c2] = torch.stack([w, x, y, z], dim=1)
+
+        # Case 3: R[1,1] is the largest diagonal component
+        mask_c3 = (R_sub[:, 1, 1] > R_sub[:, 2, 2]) & ~mask_c2
+        if torch.any(mask_c3):
+            R_c3 = R_sub[mask_c3]
+            s = 2.0 * torch.sqrt(1.0 + R_c3[:, 1, 1] - R_c3[:, 0, 0] - R_c3[:, 2, 2])
+            w = (R_c3[:, 0, 2] - R_c3[:, 2, 0]) / s
+            x = (R_c3[:, 0, 1] + R_c3[:, 1, 0]) / s
+            y = 0.25 * s
+            z = (R_c3[:, 1, 2] + R_c3[:, 2, 1]) / s
+            q[mask_t_neg][mask_c3] = torch.stack([w, x, y, z], dim=1)
+
+        # Case 4: R[2,2] is the largest diagonal component
+        mask_c4 = ~mask_c2 & ~mask_c3
+        if torch.any(mask_c4):
+            R_c4 = R_sub[mask_c4]
+            s = 2.0 * torch.sqrt(1.0 + R_c4[:, 2, 2] - R_c4[:, 0, 0] - R_c4[:, 1, 1])
+            w = (R_c4[:, 1, 0] - R_c4[:, 0, 1]) / s
+            x = (R_c4[:, 0, 2] + R_c4[:, 2, 0]) / s
+            y = (R_c4[:, 1, 2] + R_c4[:, 2, 1]) / s
+            z = 0.25 * s
+            q[mask_t_neg][mask_c4] = torch.stack([w, x, y, z], dim=1)
+
+    # 确保 w >= 0
+    q[q[:, 0] < 0] *= -1.0
+
+    # 如果输入是单个矩阵，则返回单个向量
+    if is_single:
+        return q.squeeze(0)
+    return q
+
 
 def build_scaling_rotation(s, r):
     L = torch.zeros((s.shape[0], 3, 3), dtype=torch.float, device="cuda")

@@ -107,7 +107,7 @@ class Gaussians:
             dist = torch.tensor(scaling, dtype=torch.float, device="cuda")
             scales = self._inverse_scaling_activation(dist) * torch.ones_like(pos)
         rots = torch.zeros((fused_point_cloud.shape[0], 4), device="cuda")
-        rots[:, 0] = 1
+        rots[:, 0] = 1 # (w,x,y,z)
 
         opacities = inverse_sigmoid(
             opacity * torch.ones((fused_point_cloud.shape[0], 1), dtype=torch.float, device="cuda"))
