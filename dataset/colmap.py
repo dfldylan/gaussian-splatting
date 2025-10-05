@@ -62,12 +62,18 @@ def qvec2rotmat(qvec):
 
 
 def rotmat2qvec(R):
-    Rxx, Ryx, Rzx, Rxy, Ryy, Rzy, Rxz, Ryz, Rzz = R.flat
+    # 显式索引，避免展平顺序问题；输出顺序与 COLMAP 一致 [qw, qx, qy, qz]
+    Rxx, Rxy, Rxz = R[0, 0], R[0, 1], R[0, 2]
+    Ryx, Ryy, Ryz = R[1, 0], R[1, 1], R[1, 2]
+    Rzx, Rzy, Rzz = R[2, 0], R[2, 1], R[2, 2]
+
     K = np.array([
-        [Rxx - Ryy - Rzz, 0, 0, 0],
-        [Ryx + Rxy, Ryy - Rxx - Rzz, 0, 0],
-        [Rzx + Rxz, Rzy + Ryz, Rzz - Rxx - Ryy, 0],
-        [Ryz - Rzy, Rzx - Rxz, Rxy - Ryx, Rxx + Ryy + Rzz]]) / 3.0
+        [Rxx - Ryy - Rzz,      Rxy + Ryx,          Rxz + Rzx,          Ryz - Rzy],
+        [Rxy + Ryx,            Ryy - Rxx - Rzz,    Ryz + Rzy,          Rzx - Rxz],
+        [Rxz + Rzx,            Ryz + Rzy,          Rzz - Rxx - Ryy,    Ryx - Rxy],
+        [Ryz - Rzy,            Rzx - Rxz,          Ryx - Rxy,          Rxx + Ryy + Rzz]
+    ]) / 3.0
+
     eigvals, eigvecs = np.linalg.eigh(K)
     qvec = eigvecs[[3, 0, 1, 2], np.argmax(eigvals)]
     if qvec[0] < 0:
