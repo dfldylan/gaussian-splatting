@@ -15,6 +15,9 @@ from errno import EEXIST
 from os import makedirs, path
 
 from arguments.__init__ import ModelParams, OptimizationParams
+import time
+
+OUTPUT_PATH = "/tmp/gaussfluids"
 
 try:
     from torch.utils.tensorboard import SummaryWriter
@@ -66,3 +69,8 @@ import sys
 
 def is_debug_mode():
     return sys.gettrace() is not None
+
+def set_output_path():
+    output_path = os.path.join(OUTPUT_PATH, time.strftime("%Y%m%d%H%M%S",time.localtime()))
+    os.makedirs(output_path, exist_ok=True)
+    return output_path

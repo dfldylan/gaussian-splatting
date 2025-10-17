@@ -23,7 +23,7 @@ from utils.general_utils import handle_factor
 from utils.loss_utils import l1_loss, ssim, density_loss, aniso_loss, vol_loss, opacity_loss, consistency_loss
 from utils.math_utils import ActivationType
 from utils.sh_utils import rgb_str_to_sh_tensor
-from utils.system_utils import dump_cfg
+from utils.system_utils import dump_cfg, set_output_path
 from utils.time_utils import TimeSeriesInfo
 
 
@@ -224,7 +224,7 @@ def export_npz(source_path, output_path, mdl: ModelParams, opt: OptimizationPara
 
         time_info = dataloader.time_info if time_info is None else time_info
 
-        save_path = os.path.join(output_path, 'npz')
+        save_path = set_output_path()
         os.makedirs(save_path, exist_ok=True)
 
         json.dump(time_info._asdict(), open(os.path.join(save_path, 'time_info.json'), 'w'))

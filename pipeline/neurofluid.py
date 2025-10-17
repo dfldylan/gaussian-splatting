@@ -20,7 +20,7 @@ from renderer.network_tools import handle_network
 from utils.density import get_density_info
 from utils.general_utils import safe_state, get_factor
 from utils.loss_utils import l1_loss, ssim, aniso_loss, vol_loss, consistency_loss
-from utils.system_utils import dump_cfg
+from utils.system_utils import dump_cfg, set_output_path
 from utils.time_utils import TimeSeriesInfo
 from utils.to_splishsplash import write_bgeo_from_numpy
 
@@ -236,7 +236,7 @@ def export(source_path, output_path, mdl: ModelParams, opt: OptimizationParams, 
 
         time_info = dataloader.time_info if time_info is None else time_info
 
-        save_path = os.path.join(output_path, 'npz')
+        save_path = set_output_path()
         os.makedirs(save_path, exist_ok=True)
         if bgeo == True:
             last_pos = None

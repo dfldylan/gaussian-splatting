@@ -18,7 +18,7 @@ from dataset.cameras import ShootModel
 from renderer import render
 from utils.loss_utils import l1_loss, ssim, density_loss, consistency_loss, position_loss
 from utils.sh_utils import RGB2SH, rgb_str_to_tensor
-from utils.system_utils import dump_cfg
+from utils.system_utils import dump_cfg, set_output_path
 
 
 @dataclass
@@ -313,7 +313,7 @@ def trans_sets(mdl: ModelParams, opt: OptimizationParams, pipe, checkpoint, flui
         bg_color = [1, 1, 1] if mdl.white_background else [0, 0, 0]
         background = torch.tensor(bg_color, dtype=torch.float32, device="cuda")
 
-        save_path = os.path.join(model_path, 'npz')
+        save_path = set_output_path()
         os.makedirs(save_path, exist_ok=True)
 
         json.dump(time_info._asdict(), open(os.path.join(save_path, 'time_info.json'), 'w'))

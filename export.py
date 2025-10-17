@@ -49,12 +49,14 @@ if __name__ == "__main__":
         mp, _ = ArgumentParser(scalarflow.ModelParams, allow_abbrev=False).parse_known_args()
         pp, _ = ArgumentParser(scalarflow.PipelineParams, allow_abbrev=False).parse_known_args()
         op, _ = ArgumentParser(scalarflow.OptimizationParams, allow_abbrev=False).parse_known_args()
-        scalarflow.export_npz(source_path, os.path.join(model_path, "output"), mp, op, pp, args.start_checkpoint)
+        scalarflow.export_npz(source_path, os.path.join(model_path, "output"), mp, op, pp, args.start_checkpoint,
+                          ply=args.ply)
     elif dataset_type == DatasetType.ColmapScene:
         mp, _ = ArgumentParser(colmap.ModelParams, allow_abbrev=False).parse_known_args()
         pp, _ = ArgumentParser(colmap.PipelineParams, allow_abbrev=False).parse_known_args()
         op, _ = ArgumentParser(colmap.OptimizationParams, allow_abbrev=False).parse_known_args()
-        colmap.export_npz(source_path, os.path.join(model_path, "output"), mp, op, pp, args.start_checkpoint)
+        colmap.export_npz(source_path, os.path.join(model_path, "output"), mp, op, pp, args.start_checkpoint,
+                          ply=args.ply)
     elif dataset_type == DatasetType.Neurofluid:
         mp, _ = ArgumentParser(neurofluid.ModelParams, allow_abbrev=False).parse_known_args()
         pp, _ = ArgumentParser(neurofluid.PipelineParams, allow_abbrev=False).parse_known_args()
