@@ -1,16 +1,19 @@
 import copy
-import torch
-import numpy as np
+import time
+from threading import Thread
+
 import matplotlib.pyplot as plt
+import numpy as np
+import torch
+
+from arguments import PipelineParams
+from dataset.cameras import MiniCam
 from model.gaussfluids import Gaussfluids
 from model.gaussians import Gaussians
-from arguments import PipelineParams
 from renderer import render, network_gui
-from arguments.__init__ import OptimizationParams
-from dataset.cameras import MiniCam
+from utils.sh_utils import RGB2SH
 from utils.time_utils import TimeSeriesInfo
 from utils.tools import similarity_mask
-from utils.sh_utils import RGB2SH
 
 
 def build_gaussframe(gaussians=None, time=None, gaussians_bg=None):
@@ -106,3 +109,58 @@ def print_color(labels, unique_labels, target_color=None, color_tensor=None):
     dc = RGB2SH(dc)
 
     return dc, opacity
+
+
+class Netviewer:
+    def __init__(self, host="0.0.0.0", port=6009):
+        self.exit_flag = False
+        self.thread = None
+        self.pause_flag = False
+
+        network_gui.init(host, port)
+
+    def disconnect(self):
+        network_gui.conn.close() if network_gui.conn is not None else None
+        network_gui.listener.close()
+
+    def start_thread(self, pipe: PipelineParams, gaussians: Gaussians, bg_tensor, source_path):
+        # 去掉 prune_mask 参数，线程内每轮从 self.prune_mask 读取
+        self.thread = Thread(target=self.handle_network, args=(pipe, gaussians, bg_tensor, source_path))
+        self.thread.start()
+
+    def join_thread(self):
+        if self.thread is not None:
+            self.thread.join()
+            self.thread = None
+
+    def handle_network(self, pipe: PipelineParams, gaussians: Gaussians, bg_tensor, source_path):
+        while True:
+            try:
+                if network_gui.conn == None:
+                    if self.exit_flag:
+                        break
+                    network_gui.try_connect()
+                loop, exitable = network_receive_render_send_static(source_path, pipe,
+                                                                    gaussians, bg_tensor)
+                self.pause_flag = not loop
+                if self.exit_flag and exitable:
+                    break
+            except Exception as e:
+                network_gui.conn = None
+            time.sleep(.04)
+
+
+def network_receive_render_send_static(source_path, pipe: PipelineParams, gaussians: Gaussians, background):
+    net_image_bytes = None
+    custom_cam: MiniCam
+    custom_cam, no_loop, pipe.convert_SHs_python, pipe.compute_cov3D_python, no_exit, scaling_modifer, frame, checkbox_1, checkbox_2, checkbox_3, slider_float_1, slider_float_2 = network_gui.receive()
+    loop = not no_loop
+    exitable = not no_exit
+    if custom_cam is not None:
+        ret = render(custom_cam, gaussians, pipe, background, scaling_modifer)
+
+        net_image = ret["render"]
+        net_image_bytes = memoryview(
+            (torch.clamp(net_image, min=0, max=1.0) * 255).byte().permute(1, 2, 0).contiguous().cpu().numpy())
+    network_gui.send(net_image_bytes, source_path)
+    return loop, exitable

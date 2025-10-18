@@ -19,12 +19,20 @@ import time
 
 OUTPUT_PATH = "/tmp/gaussfluids"
 
-try:
-    from torch.utils.tensorboard import SummaryWriter
+TENSORBOARD_FOUND = True # Assume it's found, check on first use
 
-    TENSORBOARD_FOUND = True
-except ImportError:
-    TENSORBOARD_FOUND = False
+_summary_writer = None
+
+def get_summary_writer(log_dir=None):
+    global _summary_writer
+    if TENSORBOARD_FOUND and _summary_writer is None:
+        try:
+            from torch.utils.tensorboard import SummaryWriter
+            _summary_writer = SummaryWriter(log_dir)
+        except ImportError:
+            # This will be caught by the calling function
+            raise
+    return _summary_writer
 
 
 def mkdir_p(folder_path):
