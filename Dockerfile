@@ -8,7 +8,9 @@ RUN wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh -
     && bash /miniconda.sh -b -p /miniconda \
     && rm /miniconda.sh
 ENV PATH=/miniconda/bin:${PATH}
-RUN conda create -n gaussfluids python=3.7.13
+RUN conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/main && \
+    conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/r
+RUN conda create -y -n gaussfluids python=3.7.13
 RUN echo "source /miniconda/bin/activate gaussfluids" > ~/.bashrc
 ENV PATH /opt/conda/envs/gaussfluids/bin:$PATH
 RUN conda install -n gaussfluids -c pytorch -c conda-forge -c defaults \
